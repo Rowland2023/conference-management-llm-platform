@@ -1,8 +1,8 @@
 
 import { z } from 'zod';
 import { withSpan } from '@opentelemetry/api';
-import { tracer } from '../observability/tracer.js';
-import { AppError } from '../errors/AppError.js';
+import { tracer } from "../../../cross-cutting/tracing/tracing.js";
+import { ApplicationError } from "../../application/errors/ApplicationErrors.js";
 
 // All tool implementations must be idempotent
 export class ToolExecutor {

@@ -1,68 +1,150 @@
-// src/modules/ticket/index.js
+// src/conference-management/ticket/index.js
+// Composition Root for Ticket Module
 
 // Infrastructure
-import { TicketModelDefine } from "./infrastructure/persistence/models/TicketModel.js";
-import { TicketMapper } from "./infrastructure/persistence/mappers/TicketMapper.js";
-import { PostgresTicketRepository } from "./infrastructure/persistence/repositories/PostgresTicketRepository.js";
+import { TicketModelDefine } from "./Infrastructure/schemas/TicketModel.js";
+import { TicketMapper } from "./Infrastructure/mappers/TicketMapper.js";
+import { PostgresTicketRepository } from "./Infrastructure/repository/PostgresTicketRepository.js";
+import { PostgresOutboxRepository } from "../../shared/Infrastructure/messaging/outbox/PostgresOutboxRepository.js";
+import { UnitOfWork } from "../../shared/application/persistence/UnitOfWork.js";
 
-// Application
-import { CreateTicketUseCase } from "./application/useCases/CreateTicketUseCase.js";
-import { ReserveTicketUseCase } from "./application/useCases/ReserveTicketUseCase.js";
-import { ReleaseTicketUseCase } from "./application/useCases/ReleaseTicketUseCase.js";
-import { PurchaseTicketUseCase } from "./application/useCases/PurchaseTicketUseCase.js";
-import { CancelTicketUseCase } from "./application/useCases/CancelTicketUseCase.js";
+// Application Command & Query Services
+import { TicketCommandService } from "./application/commands/TicketCommandService.js";
+import { PaymentCommandService } from "./application/commands/PaymentCommandService.js";
 
+// Presentation
+import { TicketController } from "./api/ticket.controller.js";
+import { getTicketRoutes } from "./api/ticket.route.js";
+
+/**
+ * Composition Root for Ticket Module
+ */
 export function createTicketModule({
+  db,
   sequelize,
   transactionManager,
-  outboxRepository
+  logger,
+  config
 }) {
-  // Define Sequelize model
-  const TicketModel = TicketModelDefine(sequelize);
+  const activeDb = db || sequelize;
 
-  // Repository
+  // 1. Core Dependency Verification
+  if (!activeDb) throw new Error("Ticket Module: 'db' or 'sequelize' connection is required.");
+  
+  const activeTxManager = transactionManager || new UnitOfWork(activeDb);
+
+  // 2. Models & Infrastructure Mappers
+  const TicketModel = TicketModelDefine(activeDb);
+  const ticketMapper = new TicketMapper();
+
+  // 3. Repositories (Bound to transaction manager)
   const ticketRepository = new PostgresTicketRepository({
     model: TicketModel,
-    mapper: TicketMapper,
-    transactionManager,
-    outboxRepository
+    mapper: ticketMapper,
+    transactionManager: activeTxManager
   });
 
-  // Use Cases
-  const createTicket = new CreateTicketUseCase({
+  const outboxRepository = new PostgresOutboxRepository({
+    uow: activeTxManager
+  });
+
+  // 4. Command Services
+  const ticketCommandService = new TicketCommandService({
     ticketRepository,
-    transactionManager
+    outboxRepository,
+    transactionManager: activeTxManager,
+    logger
   });
 
-  const reserveTicket = new ReserveTicketUseCase({
+  const paymentCommandService = new PaymentCommandService({
     ticketRepository,
-    transactionManager
+    outboxRepository,
+    transactionManager: activeTxManager,
+    logger
   });
 
-  const releaseTicket = new ReleaseTicketUseCase({
-    ticketRepository,
-    transactionManager
+  // 5. Presentation Router
+  const ticketController = new TicketController({
+    ticketCommandService,
+    paymentCommandService
   });
 
-  const purchaseTicket = new PurchaseTicketUseCase({
-    ticketRepository,
-    transactionManager
-  });
+  const router = getTicketRoutes(ticketController);
 
-  const cancelTicket = new CancelTicketUseCase({
-    ticketRepository,
-    transactionManager
-  });
+  // Track event subscriptions for teardown
+  const subscriptions = new Map();
 
+  // 6. Public Surface Boundary
   return {
-    repository: ticketRepository,
+    router,
 
-    useCases: {
-      createTicket,
-      reserveTicket,
-      releaseTicket,
-      purchaseTicket,
-      cancelTicket
+    /**
+     * Cross-module Integration Subscriptions
+     */
+    subscribe: (eventBus) => {
+      if (!eventBus) {
+        logger?.warn("Ticket Module: No eventBus provided. Skipping subscriptions.");
+        return;
+      }
+
+      // 1. Auto-release reserved ticket on payment failure
+      const failedSubToken = eventBus.subscribe("payment.failed", async (evt) => {
+        const { ticketId, reason, correlationId } = evt || {};
+        if (!ticketId) return;
+
+        logger?.info(
+          { ticketId, correlationId },
+          "Ticket Module: Auto-releasing ticket due to payment failure."
+        );
+
+        try {
+          await ticketCommandService.releaseTicket({
+            ticketId,
+            reason: reason || "PAYMENT_FAILED",
+            correlationId
+          });
+        } catch (err) {
+          logger?.error(
+            { err, ticketId, correlationId },
+            "Failed to release ticket following payment.failed event"
+          );
+        }
+      });
+      if (failedSubToken) subscriptions.set("payment.failed", failedSubToken);
+
+      // 2. Auto-complete ticket purchase on payment success
+      const succeededSubToken = eventBus.subscribe("payment.succeeded", async (evt) => {
+        const { ticketId, paymentReference, correlationId } = evt || {};
+        if (!ticketId) return;
+
+        try {
+          await paymentCommandService.completePurchase({
+            ticketId,
+            paymentReference,
+            correlationId
+          });
+        } catch (err) {
+          logger?.error(
+            { err, ticketId, correlationId },
+            "Failed to complete ticket purchase following payment.succeeded event"
+          );
+        }
+      });
+      if (succeededSubToken) subscriptions.set("payment.succeeded", succeededSubToken);
+    },
+
+    start: async () => {
+      logger?.info("Ticket module initialized and ready.");
+    },
+
+    stop: async (eventBus) => {
+      if (eventBus && typeof eventBus.unsubscribe === 'function') {
+        for (const [topic, token] of subscriptions.entries()) {
+          eventBus.unsubscribe(topic, token);
+        }
+        subscriptions.clear();
+      }
+      logger?.info("Ticket module cleanly stopped.");
     }
   };
 }
