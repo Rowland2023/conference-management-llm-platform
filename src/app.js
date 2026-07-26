@@ -1,148 +1,199 @@
 // src/app.js
 
 import express from "express";
-import { db } from "./Shared/infrastructure/database/knex.js";
+import { db } from "./cross-cutting/database/knex.js"; 
 
 // Global Shared Infrastructure Engine Components
-import * as messaging from "./Shared/infrastructure/messaging/index.js";
-import { initLLM } from "./Shared/infrastructure/llm/index.js";
+import { KafkaEventBus } from "./shared/Infrastructure/messaging/kafka/KafkaEventBus.js";
+import { OutboxWorker } from "./shared/Infrastructure/messaging/outbox/outboxworker.js";
+import { initLLM } from "./shared/Infrastructure/ai/index.js";
 
 // Feature Modules
-import { initEventModule } from "./modules/Event Schedule/index.js";
-import { initPaymentModule } from "./modules/Payment/index.js";
-import { initNotificationModule } from "./modules/Notification/index.js";
-import { initRegistrationModule } from "./modules/Registration/index.js";
+import { createConferenceEventScheduleSubModule } from "./conference-management/event_schedule/index.js";
+import { createAccountingServicesModule } from "./conference-management/accounting_services/index.js";
+import { createConferenceRegistrationSubModule } from "./conference-management/registration/index.js";
+import { createTicketModule } from "./conference-management/ticket/index.js";
 
 // Security & API Transports
-import { LLMController } from "./api/llm.controller.js";
-import { createLLMRouter } from "./api/llm.route.js";
-import { authService } from "./Shared/security/authService.js";
+import { LLMController } from "./shared/Infrastructure/ai/api/llm.controller.js";
+import { createLLMRouter } from "./shared/Infrastructure/ai/api/llm.route.js";
+import { AuthService } from "./shared-security-starter/application/AuthService.js";
+import { authenticate } from "./shared-security-starter/presentation/authenticate.js";
 
-const app = express();
-app.use(express.json());
+export async function createApp({ logger = console } = {}) {
+  const app = express();
+  app.use(express.json({ limit: "1mb" }));
 
-// =============================================================================
-// 1. INITIALIZE GLOBAL INFRASTRUCTURE CORES
-// =============================================================================
+  const authService = new AuthService();
 
-// Generic Outbox Publisher leveraging the global messaging client instance
-const outboxPublisher = messaging.createOutboxPublisher({ 
-    db, 
-});
+  // =============================================================================
+  // 1. INITIALIZE GLOBAL INFRASTRUCTURE CORES
+  // =============================================================================
+  const messageClient = new KafkaEventBus();
 
-// =============================================================================
-// 2. INITIALIZE FEATURE MODULES (Injecting Shared Connections)
-// =============================================================================
-// We pass the global messageClient down so modules can register their own events
-const eventModule = initEventModule({ db, messageClient });
-const paymentModule = initPaymentModule({ db, messageClient });
-const notificationModule = initNotificationModule({ db, messageClient });
-const registrationModule = initRegistrationModule({ db, messageClient });
+  const outboxPublisher = new OutboxWorker({
+    db,
+    messageClient,
+  });
 
-// =============================================================================
-// 3. INITIALIZE COGNITIVE ASSISTANT CORE (LLM Tool Mapping)
-// =============================================================================
-const llm = initLLM({
+  // =============================================================================
+  // 2. INITIALIZE FEATURE MODULES (Injecting Shared Connections)
+  // =============================================================================
+  const eventModule = createConferenceEventScheduleSubModule({
+    dbConnection: db,
+    eventBus: messageClient,
+    logger,
+  });
+
+  const accountingModule = createAccountingServicesModule({
+    dbConnection: db,
+    eventBus: messageClient,
+    logger,
+  });
+
+  const registrationModule = createConferenceRegistrationSubModule({
+    db,
+    logger,
+  });
+
+  const ticketModule = createTicketModule({
+    sequelize: db,
+    transactionManager: db,
+    logger,
+  });
+
+  const modules = [eventModule, accountingModule, registrationModule, ticketModule];
+
+  // =============================================================================
+  // 3. EVENT BUS SUBSCRIPTIONS
+  // =============================================================================
+  for (const targetModule of modules) {
+    if (typeof targetModule.subscribe === "function") {
+      targetModule.subscribe(messageClient);
+    }
+  }
+
+  // =============================================================================
+  // 4. COGNITIVE ASSISTANT CORE (LLM Tool Mapping)
+  // =============================================================================
+  const llm = initLLM({
     openAIConfig: { apiKey: process.env.OPENAI_API_KEY },
     uowFactory: db.unitOfWorkFactory,
     useCases: {
-        ...eventModule.useCases,
-        ...paymentModule.useCases,
-        ...registrationModule.useCases,
-        ...notificationModule.useCases
+      ...eventModule.useCases,
+      ...accountingModule.useCases,
+      ...registrationModule.useCases,
+      ...ticketModule.useCases,
+    },
+  });
+
+  const llmController = new LLMController({
+    commandInterceptor: llm.commandInterceptor,
+    authService,
+  });
+  const llmRouter = createLLMRouter({
+    llmController,
+    authenticate,
+  });
+
+  // =============================================================================
+  // 5. ROUTE NETWORK MOUNT POINTS
+  // =============================================================================
+  if (eventModule.eventRouter) app.use("/api/events", eventModule.eventRouter);
+  if (registrationModule.router) app.use("/api/registrations", registrationModule.router);
+  if (ticketModule.router) app.use("/api/tickets", ticketModule.router);
+  app.use("/api/ai", llmRouter);
+
+  // Mount presentation app for Accounting
+  const accountingApp = accountingModule.createPresentationApp(
+    {},
+    {
+      requestIdMiddleware: (req, res, next) => next(),
+      verifyWebhookSignature: (req, res, next) => next(),
+      authMiddleware: authenticate,
+      idempotencyMiddleware: (req, res, next) => next(),
+      errorHandler: (err, req, res, next) => next(err),
     }
-});
+  );
+  app.use("/api/accounting", accountingApp);
 
-const llmController = new LLMController({ commandInterceptor: llm.commandInterceptor, authService });
-const llmRouter = createLLMRouter({ llmController, authenticate: authService.authenticate });
+  app.get("/health", (req, res) =>
+    res.json({ status: "UP", service: "conference-core", timestamp: new Date().toISOString() })
+  );
 
-// =============================================================================
-// 4. ROUTE NETWORK MOUNT POINTS
-// =============================================================================
-app.use("/api/events", eventModule.router);
-app.use("/api/payments", paymentModule.router);
-app.use("/api/notifications", notificationModule.router);
-app.use("/api/registrations", registrationModule.router);
-app.use("/api/ai", llmRouter);
+  // Fallback Error Boundaries
+  app.use((req, res) =>
+    res.status(404).json({
+      success: false,
+      error: { code: "NOT_FOUND", message: `Route ${req.method} ${req.originalUrl} not found.` },
+    })
+  );
 
-app.get("/", (req, res) => res.json({ status: "ok", service: "conference-core", version: "1.0.0" }));
-
-// Fallback Error Routing Boundaries
-app.use((req, res) => res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: "Resource not found." } }));
-app.use((err, req, res, next) => {
-    console.error("Critical Inbound Error:", err);
+  app.use((err, req, res, next) => {
+    logger.error("Unhandled Inbound Error:", err);
     res.status(err.statusCode || 500).json({
-        success: false,
-        error: { code: err.code || "INTERNAL_SERVER_ERROR", message: err.message }
+      success: false,
+      error: {
+        code: err.code || "INTERNAL_SERVER_ERROR",
+        message: err.message || "An unexpected error occurred.",
+      },
     });
-});
+  });
 
-// =============================================================================
-// 5. CONTROLLED DAEMON LIFE-CYCLE MANAGEMENT
-// =============================================================================
-const modules = [eventModule, paymentModule, notificationModule, registrationModule];
-
-export async function bootstrap() {
-    try {
-        console.log("Connecting global messaging backbone pools (Kafka)...");
-        await messageClient.connect();
-
-        console.log("Starting transactional outbox sync engines...");
-        await outboxPublisher.start();
-
-        console.log("Initializing module daemons & event-driven consumers...");
-        for (const targetModule of modules) {
-            if (typeof targetModule.start === "function") {
-                await targetModule.start();
-            }
-        }
-
-        console.log("Application boot sequence fully synchronized.");
-        return app;
-    } catch (error) {
-        console.error("Fatal system fallback occurred during bootstrap sequence:", error);
-        throw error;
-    }
-}
-
-export async function shutdown(server) {
-    console.log("Termination signal caught: Initiating graceful drain process...");
-
-    if (server) {
-        await new Promise(resolve => server.close(resolve));
-        console.log("HTTP gateway closed to new inbound traffic.");
+  // =============================================================================
+  // 6. DAEMON LIFECYCLE MANAGEMENT
+  // =============================================================================
+  const start = async () => {
+    logger.info("Connecting global messaging backbone pools...");
+    if (messageClient && typeof messageClient.connect === "function") {
+      await messageClient.connect();
     }
 
-    // 1. Tell local module loops and Kafka consumers to stop reading new messages
+    logger.info("Starting transactional outbox sync engines...");
+    if (outboxPublisher && typeof outboxPublisher.start === "function") {
+      await outboxPublisher.start();
+    }
+
+    logger.info("Initializing module daemons & workers...");
     for (const targetModule of modules) {
-        if (typeof targetModule.stop === "function") {
-            try { await targetModule.stop(); } catch (e) { console.error("Error stopping module daemon:", e); }
+      if (typeof targetModule.start === "function") {
+        await targetModule.start();
+      }
+    }
+    logger.info("Application boot sequence fully synchronized.");
+  };
+
+  const stop = async () => {
+    logger.info("Initiating graceful module drain process...");
+
+    for (const targetModule of modules) {
+      if (typeof targetModule.stop === "function") {
+        try {
+          await targetModule.stop(messageClient);
+        } catch (e) {
+          logger.error("Error stopping module daemon:", e);
         }
+      }
     }
 
-    // 2. Stop the local outbox publisher from pulling pending events from the DB
-    try {
+    if (outboxPublisher && typeof outboxPublisher.stop === "function") {
+      try {
         await outboxPublisher.stop();
-        console.log("Outbox publisher drained and stopped successfully.");
-    } catch (e) {
-        console.error("Error stopping outbox publisher:", e);
+        logger.info("Outbox publisher stopped.");
+      } catch (e) {
+        logger.error("Error stopping outbox publisher:", e);
+      }
     }
 
-    // 3. Sever connection loops to the Kafka broker clusters cleanly
-    try {
+    if (messageClient && typeof messageClient.disconnect === "function") {
+      try {
         await messageClient.disconnect();
-        console.log("Kafka message broker clients disconnected cleanly.");
-    } catch (e) {
-        console.error("Error disconnecting Kafka pools:", e);
+        logger.info("Message broker client disconnected.");
+      } catch (e) {
+        logger.error("Error disconnecting message broker:", e);
+      }
     }
+  };
 
-    // 4. Drain remaining database pools
-    if (db && typeof db.destroy === "function") {
-        await db.destroy();
-        console.log("Database connection pools closed.");
-    }
-
-    console.log("All systems safe. Offline exit sequence cleared.");
+  return { app, start, stop };
 }
-
-export default app;
