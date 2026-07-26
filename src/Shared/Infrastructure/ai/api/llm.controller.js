@@ -1,4 +1,4 @@
-import { ValidationError } from "../../../shared/errors/ApplicationErrors.js";
+import { ApplicationError } from "../../../application/errors/ApplicationErrors.js";
 
 export class LLMController {
   constructor({ commandInterceptor, authService }) {
