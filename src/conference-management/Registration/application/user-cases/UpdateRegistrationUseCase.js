@@ -1,4 +1,4 @@
-import { NotFoundError, UnauthorizedError, BusinessRuleValidationError } from '../../domain/errors/DomainErrors.js';
+import { NotFoundError, UnauthorizedError, BusinessRuleValidationError } from '../../../../shared/domain/error/DomainErrors.js';
 
 export class UpdateRegistrationUseCase {
   constructor({ registrationRepository, conferenceRepository, outboxRepository, transactionManager }) {

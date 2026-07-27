@@ -1,4 +1,4 @@
-// src/shared/errors/ApplicationErrors.js
+// src/shared/application/errors/ApplicationErrors.js
 
 /**
  * Base class for all application-layer errors.

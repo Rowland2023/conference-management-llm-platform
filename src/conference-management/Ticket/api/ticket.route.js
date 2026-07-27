@@ -1,7 +1,7 @@
 // src/modules/ticket/api/ticket.route.js
 import { Router } from 'express';
-import { idempotencyMiddleware } from '../../shared/middleware/idempotency.js';
-import { correlationIdMiddleware } from '../../shared/middleware/correlationId.js';
+import { idempotencyMiddleware } from "../../../shared/infrastructure/middleware/idempotency.js";
+import { correlationIdMiddleware } from "../../../shared/infrastructure/middleware/correlationId.js";
 
 /**
  * Ticket module HTTP router factory

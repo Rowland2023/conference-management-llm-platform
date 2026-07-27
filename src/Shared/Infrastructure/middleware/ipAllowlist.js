@@ -1,12 +1,27 @@
-import express from 'express';
-import { ipAllowlist } from '../../../../shared/infrastructure/middleware/ipAllowlist.js';
+// src/shared/infrastructure/middleware/ipAllowlist.js
 
-const router = express.Router();
+import ipRangeCheck from "ip-range-check";
 
-// Define trusted IP addresses (e.g., internal services or admin office IPs)
-const trustedIps = ['192.168.1.50', '203.0.113.195'];
+/**
+ * Restrict access to a list of trusted IPs or CIDR ranges.
+ */
+export function ipAllowlist(allowedRanges = []) {
+  return (req, res, next) => {
+    const clientIp =
+      req.ip ||
+      req.headers["x-forwarded-for"]?.split(",")[0]?.trim() ||
+      req.socket?.remoteAddress;
 
-// Protect payout endpoints using the allowlist
-router.post('/payouts/trigger', ipAllowlist(trustedIps), payoutController);
+    if (!ipRangeCheck(clientIp, allowedRanges)) {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: "IP_NOT_ALLOWED",
+          message: "Access denied from this IP address."
+        }
+      });
+    }
 
-export default router;
+    next();
+  };
+}

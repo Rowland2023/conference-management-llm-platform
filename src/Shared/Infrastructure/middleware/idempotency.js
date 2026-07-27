@@ -1,11 +1,26 @@
-import express from 'express';
-import { idempotencyMiddleware } from '../../../../shared/infrastructure/middleware/idempotency.js';
-import { redisClient } from '../../../../shared/infrastructure/database/redis.js'; // Your Redis client
-import { processPaymentController } from '../controllers/payment.controller.js';
+// src/shared/infrastructure/middleware/idempotency.js
 
-const router = express.Router();
+export function idempotency(options = {}) {
+  const {
+    header = "Idempotency-Key",
+    required = true
+  } = options;
 
-// Apply idempotency specifically to financial charge/transfer endpoints (24-hour TTL)
-router.post('/charge', idempotencyMiddleware(redisClient, 86400), processPaymentController);
+  return (req, res, next) => {
+    const key = req.get(header);
 
-export default router;
+    if (required && !key) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: "MISSING_IDEMPOTENCY_KEY",
+          message: `${header} header is required.`
+        }
+      });
+    }
+
+    req.idempotencyKey = key || null;
+
+    next();
+  };
+}

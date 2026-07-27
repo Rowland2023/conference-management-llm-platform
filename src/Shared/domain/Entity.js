@@ -1,4 +1,4 @@
-import { DomainValidationError } from '../errors/DomainErrors.js';
+import { DomainValidationError } from './error/DomainErrors.js';
 import { DomainEvent } from './DomainEvent.js'; // add this
 
 export class Entity {

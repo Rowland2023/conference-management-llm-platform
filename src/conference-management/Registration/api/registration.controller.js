@@ -1,5 +1,5 @@
 import { toResponseDto } from '../mappers/RegistrationMapper.js';
-import { createRegistrationSchema, updateRegistrationSchema } from '../validators/registration.validator.js';
+import { createRegistrationSchema, updateRegistrationSchema } from './validators/registration.schema.js';
 
 export class RegistrationController {
   constructor({ 

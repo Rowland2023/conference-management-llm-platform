@@ -1,96 +1,80 @@
-/**
- * @file src/cross-cutting/request-context.js
- * @description High-level domain context manager for tracking request/job metadata.
- */
-const { randomUUID } = require('node:crypto');
-const asyncContext = require('./async-context');
+// src/cross-cutting/context/async-context.js
 
-class RequestContext {
+import { AsyncLocalStorage } from "node:async_hooks";
+
+class AsyncContext {
+  constructor() {
+    this.storage = new AsyncLocalStorage();
+  }
+
   /**
-   * Express Middleware to initialize context for incoming HTTP requests.
+   * Executes a callback within a context.
    */
-  static middleware() {
-    return (req, res, next) => {
-      const correlationId =
-        req.headers['x-correlation-id'] ||
-        req.headers['x-request-id'] ||
-        req.headers['traceparent'] ||
-        randomUUID();
+  run(store, callback) {
+    return this.storage.run(store, callback);
+  }
 
-      // Reflect correlation ID in response headers for client tracing
-      res.setHeader('X-Correlation-ID', correlationId);
+  /**
+   * Runs with additional values merged into the current context.
+   */
+  runWith(values, callback) {
+    const parentStore = this.getStore() || {};
+    let newStore;
 
-      const store = {
-        correlationId,
-        path: req.originalUrl || req.url,
-        method: req.method,
-      };
+    if (parentStore instanceof Map) {
+      newStore = new Map(parentStore);
 
-      // Extract tenant context if passed down from reverse proxy/gateway
-      if (req.headers['x-tenant-id']) {
-        store.tenantId = req.headers['x-tenant-id'];
+      for (const [k, v] of Object.entries(values)) {
+        newStore.set(k, v);
       }
+    } else {
+      newStore = {
+        ...parentStore,
+        ...values,
+      };
+    }
 
-      asyncContext.run(store, () => next());
-    };
+    return this.storage.run(newStore, callback);
   }
 
   /**
-   * Runs an asynchronous execution block with a manually created context.
-   * Ideal for outbox background workers, Kafka consumers, or scheduled jobs.
-   *
-   * @param {Object} contextData - Initial metadata to seed (e.g. { correlationId, tenantId, userId })
-   * @param {Function} fn - Async operation to execute
-   * @returns {any} Result of fn execution
+   * Returns the active store.
    */
-  static run(contextData = {}, fn) {
-    const store = {
-      correlationId: contextData.correlationId || randomUUID(),
-      ...(contextData.tenantId && { tenantId: contextData.tenantId }),
-      ...(contextData.userId && { userId: contextData.userId }),
-      ...(contextData.source && { source: contextData.source }),
-    };
-
-    return asyncContext.run(store, fn);
+  getStore() {
+    return this.storage.getStore();
   }
 
   /**
-   * Get current correlation ID.
-   * @returns {string|null}
+   * Gets a value from the current context.
    */
-  static getCorrelationId() {
-    return asyncContext.get('correlationId') || null;
+  get(key) {
+    const store = this.getStore();
+
+    if (!store) return undefined;
+
+    if (store instanceof Map) {
+      return store.get(key);
+    }
+
+    return store[key];
   }
 
   /**
-   * Get current tenant ID.
-   * @returns {string|null}
+   * Sets a value on the current context.
    */
-  static getTenantId() {
-    return asyncContext.get('tenantId') || null;
-  }
+  set(key, value) {
+    const store = this.getStore();
 
-  /**
-   * Get all active context key-values as a plain JavaScript object.
-   * Zero-cost shallow clone.
-   * @returns {Record<string, any>}
-   */
-  static getAll() {
-    const store = asyncContext.getStore();
-    if (!store) return {};
-    return { ...store };
-  }
+    if (!store) return;
 
-  /**
-   * Mutates or adds a key to the active request context dynamically
-   * (e.g., attaching authenticated userId after JWT verification).
-   *
-   * @param {string} key 
-   * @param {any} value 
-   */
-  static set(key, value) {
-    asyncContext.set(key, value);
+    if (store instanceof Map) {
+      store.set(key, value);
+    } else {
+      store[key] = value;
+    }
   }
 }
 
-module.exports = RequestContext;
+const asyncContext = new AsyncContext();
+
+export default asyncContext;

@@ -1,7 +1,12 @@
-// src/modules/ticket/application/services/TicketCommandService.js
-import { Ticket } from '../../domain/entities/Ticket.js';
-import { OptimisticLockError, DomainError } from '../../../shared/errors/index.js';
-import { withRetry } from '../../../shared/utils/retry.js';
+// src/conference-management/ticket/application/commands/TicketCommandService.js
+
+import {
+  NotFoundError,
+  ConcurrencyConflictError,
+  DomainError,
+} from "../../../../shared/domain/error/DomainErrors.js";
+
+import { withRetry } from "../../../../shared/utils/retry.js";
 
 export class TicketCommandService {
   #ticketRepository;
@@ -9,66 +14,271 @@ export class TicketCommandService {
   #outboxRepository;
   #unitOfWork;
   #logger;
+  #metrics;
+  #tracer;
 
-  constructor({ ticketRepository, conferenceRepository, outboxRepository, unitOfWork, logger }) {
+  constructor({
+    ticketRepository,
+    conferenceRepository,
+    outboxRepository,
+    unitOfWork,
+    logger,
+    metrics,
+    tracer,
+  }) {
     this.#ticketRepository = ticketRepository;
     this.#conferenceRepository = conferenceRepository;
     this.#outboxRepository = outboxRepository;
     this.#unitOfWork = unitOfWork;
     this.#logger = logger;
+    this.#metrics = metrics;
+    this.#tracer = tracer;
   }
 
-  async reserveTicket({ ticketId, userId, quantity, correlationId, idempotencyKey }) {
-    const log = this.#logger.child({ correlationId, ticketId, userId, operation: 'reserveTicket' });
-    
-    // Retry wrapper for optimistic lock conflicts
-    return withRetry(async () => {
-      // Execute ensures a FRESH transaction context is initialized on each retry attempt
-      return this.#unitOfWork.execute(async (trx) => {
-        // 1. Idempotency check
-        const cached = await this.#ticketRepository.findByIdempotencyKey(idempotencyKey, trx);
-        if (cached) {
-          log.info({ idempotencyKey }, 'Idempotent request: returning cached ticket');
-          return cached;
-        }
+  async reserveTicket(command) {
+    const {
+      ticketId,
+      userId,
+      quantity,
+      correlationId,
+      idempotencyKey,
+    } = command;
 
-        // 2. Load aggregate
-        const ticket = await this.#ticketRepository.findById(ticketId, trx);
-        if (!ticket) {
-          throw new DomainError('TICKET_NOT_FOUND', `Ticket ${ticketId} not found`, 404);
-        }
-
-        // 3. Business rule validation
-        try {
-          // FIXED: Correctly pass userId to align with the domain entity signature
-          ticket.reserve(quantity, userId, correlationId);
-        } catch (err) {
-          // Preserve the original domain error code if it exists
-          throw new DomainError('INSUFFICIENT_CAPACITY', err.message, 409);
-        }
-
-        // 4. Persist atomically
-        await this.#ticketRepository.save(ticket, trx); // Throws OptimisticLockError if version mismatch
-        await this.#outboxRepository.store(ticket.pullEvents(), trx);
-        await this.#ticketRepository.saveIdempotencyKey(idempotencyKey, ticket.id, trx);
-
-        log.info({ 
-          quantity, 
-          availableAfter: ticket.available,
-          version: ticket.version 
-        }, 'Tickets reserved successfully');
-
-        return ticket;
-      });
-    }, {
-      retries: 3,
-      onRetry: (err, attempt) => {
-        if (err instanceof OptimisticLockError) {
-          log.warn({ attempt, error: err.message }, 'Optimistic lock conflict, retrying with fresh transaction context');
-          return true; // Retry
-        }
-        return false; // Don't retry business logic errors
-      }
+    const log = this.#logger.child({
+      correlationId,
+      ticketId,
+      userId,
+      operation: "reserveTicket",
     });
+
+    const started = process.hrtime.bigint();
+
+    return this.#tracer.startActiveSpan(
+      "TicketCommandService.reserveTicket",
+      async (span) => {
+
+        span.setAttributes({
+          "ticket.id": ticketId,
+          "user.id": userId,
+          "reservation.quantity": quantity,
+          "correlation.id": correlationId,
+        });
+
+        this.#metrics.counter("ticket.reserve.requests").inc();
+
+        log.info(
+          {
+            quantity,
+            idempotencyKey,
+          },
+          "Ticket reservation started"
+        );
+
+        try {
+
+          const ticket = await withRetry(
+            async () =>
+              this.#unitOfWork.execute(async (trx) => {
+
+                //------------------------------------
+                // Idempotency
+                //------------------------------------
+
+                const cached =
+                  await this.#ticketRepository.findByIdempotencyKey(
+                    idempotencyKey,
+                    trx
+                  );
+
+                if (cached) {
+
+                  this.#metrics
+                    .counter("ticket.reserve.idempotency_hits")
+                    .inc();
+
+                  log.info(
+                    { idempotencyKey },
+                    "Idempotent request"
+                  );
+
+                  return cached;
+                }
+
+                //------------------------------------
+                // Load Aggregate
+                //------------------------------------
+
+                const ticket =
+                  await this.#ticketRepository.findById(
+                    ticketId,
+                    trx
+                  );
+
+                if (!ticket) {
+
+                  log.warn(
+                    { ticketId },
+                    "Ticket not found"
+                  );
+
+                  throw new NotFoundError(
+                    `Ticket ${ticketId} not found`
+                  );
+                }
+
+                //------------------------------------
+                // Domain
+                //------------------------------------
+
+                ticket.reserve(
+                  quantity,
+                  userId,
+                  correlationId
+                );
+
+                //------------------------------------
+                // Persist Aggregate
+                //------------------------------------
+
+                await this.#ticketRepository.save(
+                  ticket,
+                  trx
+                );
+
+                //------------------------------------
+                // Outbox
+                //------------------------------------
+
+                await this.#outboxRepository.store(
+                  ticket.pullEvents(),
+                  trx
+                );
+
+                //------------------------------------
+                // Idempotency Record
+                //------------------------------------
+
+                await this.#ticketRepository
+                  .saveIdempotencyKey(
+                    idempotencyKey,
+                    ticket.id,
+                    trx
+                  );
+
+                return ticket;
+              }),
+            {
+              retries: 3,
+
+              onRetry: (err, attempt) => {
+
+                if (!(err instanceof ConcurrencyConflictError))
+                  return false;
+
+                this.#metrics
+                  .counter("ticket.reserve.retries")
+                  .inc();
+
+                log.warn(
+                  {
+                    attempt,
+                    error: err.message,
+                  },
+                  "Retrying optimistic concurrency conflict"
+                );
+
+                return true;
+              },
+            }
+          );
+
+          //------------------------------------
+          // Success
+          //------------------------------------
+
+          this.#metrics
+            .counter("ticket.reserve.success")
+            .inc();
+
+          span.setStatus({
+            code: 1,
+          });
+
+          log.info(
+            {
+              version: ticket.version,
+              available: ticket.available,
+            },
+            "Ticket reserved successfully"
+          );
+
+          return ticket;
+        }
+
+        //----------------------------------------
+        // Business Failures
+        //----------------------------------------
+
+        catch (err) {
+
+          if (err instanceof DomainError) {
+
+            this.#metrics
+              .counter("ticket.reserve.business_failure")
+              .inc();
+
+            log.warn(
+              {
+                error: err.message,
+                code: err.code,
+              },
+              "Reservation rejected"
+            );
+
+            span.recordException(err);
+
+            throw err;
+          }
+
+          //----------------------------------------
+          // Infrastructure Failures
+          //----------------------------------------
+
+          this.#metrics
+            .counter("ticket.reserve.system_failure")
+            .inc();
+
+          log.error(
+            {
+              error: err,
+            },
+            "Unexpected reservation failure"
+          );
+
+          span.recordException(err);
+
+          throw err;
+        }
+
+        finally {
+
+          const elapsed =
+            Number(process.hrtime.bigint() - started) / 1_000_000;
+
+          this.#metrics
+            .histogram("ticket.reserve.duration.ms")
+            .observe(elapsed);
+
+          log.info(
+            {
+              durationMs: elapsed,
+            },
+            "Reservation completed"
+          );
+
+          span.end();
+        }
+      }
+    );
   }
 }

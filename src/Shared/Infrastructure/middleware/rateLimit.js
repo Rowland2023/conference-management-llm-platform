@@ -1,38 +1,76 @@
-// presentation/middlewares/rateLimit.js
-import rateLimit from 'express-rate-limit';
+import expressRateLimit from "express-rate-limit";
 
 /**
- * Standard API Rate Limiter
- * Protects general API endpoints against brute force and DDoS attacks.
+ * Wrap express-rate-limit so it doesn't crash when unit tests
+ * provide partial/mock Express response objects.
  */
-export const standardRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
-  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+const createSafeLimiter = (options) => {
+  const limiter = expressRateLimit({
+    standardHeaders: true,
+    legacyHeaders: false,
+    ...options,
+  });
+
+  return (req, res, next) => {
+    const safeRes = res || {
+      headersSent: false,
+      setHeader: () => {},
+      getHeader: () => {},
+    };
+
+    if (typeof safeRes.headersSent === "undefined") {
+      safeRes.headersSent = false;
+    }
+
+    const safeNext =
+      typeof next === "function"
+        ? next
+        : (err) => {
+            if (err) throw err;
+          };
+
+    return limiter(req, safeRes, safeNext);
+  };
+};
+
+/**
+ * Factory for creating route-specific rate limiters.
+ *
+ * Example:
+ * rateLimit({ max: 10, windowMs: 60_000 })
+ */
+export function rateLimit(options = {}) {
+  return createSafeLimiter(options);
+}
+
+/**
+ * General API limiter.
+ */
+export const standardRateLimiter = createSafeLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   message: {
     success: false,
     error: {
-      code: 'RATE_LIMIT_EXCEEDED',
-      message: 'Too many requests from this IP, please try again after 15 minutes.',
+      code: "RATE_LIMIT_EXCEEDED",
+      message:
+        "Too many requests from this IP, please try again after 15 minutes.",
     },
   },
 });
 
 /**
- * Strict Rate Limiter for Sensitive Endpoints (e.g., Auth, Payments, Refunds)
- * Protects high-value transaction or authentication endpoints from automated abuse.
+ * Sensitive operations.
  */
-export const strictRateLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 10, // Limit each IP to 10 requests per hour
-  standardHeaders: true,
-  legacyHeaders: false,
+export const strictRateLimiter = createSafeLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
   message: {
     success: false,
     error: {
-      code: 'STRICT_RATE_LIMIT_EXCEEDED',
-      message: 'Too many sensitive requests from this IP, please try again later.',
+      code: "STRICT_RATE_LIMIT_EXCEEDED",
+      message:
+        "Too many sensitive requests from this IP, please try again later.",
     },
   },
 });
