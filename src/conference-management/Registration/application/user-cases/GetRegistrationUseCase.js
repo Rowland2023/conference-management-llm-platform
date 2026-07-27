@@ -1,4 +1,4 @@
-import { NotFoundError, UnauthorizedError } from '../../domain/errors/DomainErrors.js';
+import { NotFoundError, UnauthorizedError } from '../../../../shared/domain/error/DomainErrors.js';
 
 export class GetRegistrationUseCase {
   constructor({ registrationRepository }) {

@@ -1,5 +1,6 @@
-import { DomainEvent } from "../../../../Shared/domain/DomainEvent.js";
-import { ValidationError } from "../../../../Shared/errors/ApplicationErrors.js";
+import { DomainEvent } from "../../../../shared/domain/DomainEvent.js";
+import { ValidationError }
+from "../../../../shared/application/errors/ApplicationErrors.js";
 
 const ALLOWED_CHANNELS = new Set(['email', 'sms', 'push', 'in_app']);
 

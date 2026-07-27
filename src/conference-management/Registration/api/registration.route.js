@@ -1,57 +1,58 @@
-import { Router } from 'express';
-import { authGuard } from '../../../shared/middleware/authGuard.js';
-import { validate } from '../../../shared/middleware/validate.js';
+import { Router } from "express";
+import { authenticate } from "../../../shared-security-starter/presentation/authenticate.js";
+import { validate } from "../../../shared/Infrastructure/middleware/validate.js";
+
 import {
   createRegistrationSchema,
   updateRegistrationSchema,
   registrationIdSchema,
   registrationQuerySchema,
   checkInRegistrationSchema,
-  cancelRegistrationSchema
-} from './validators/registration.schema.js';
+  cancelRegistrationSchema,
+} from "./validators/registration.schema.js";
 
 export const getRegistrationRoutes = (registrationController) => {
   const router = Router();
 
   router.post(
-    '/',
-    authGuard,
+    "/",
+    authenticate,
     validate(createRegistrationSchema),
     registrationController.createRegistration
   );
 
   router.get(
-    '/',
-    authGuard,
-    validate(registrationQuerySchema), // Added query parameters validation
+    "/",
+    authenticate,
+    validate(registrationQuerySchema),
     registrationController.getAllRegistrations
   );
 
   router.get(
-    '/:id',
-    authGuard,
-    validate(registrationIdSchema), // Added structural path ID validation
+    "/:id",
+    authenticate,
+    validate(registrationIdSchema),
     registrationController.getRegistrationById
   );
 
   router.patch(
-    '/:id',
-    authGuard,
+    "/:id",
+    authenticate,
     validate(updateRegistrationSchema),
     registrationController.updateRegistration
   );
 
   router.post(
-    '/:id/check-in', // Added missing operational endpoint mapping
-    authGuard,
+    "/:id/check-in",
+    authenticate,
     validate(checkInRegistrationSchema),
     registrationController.checkInRegistration
   );
 
   router.delete(
-    '/:id',
-    authGuard,
-    validate(cancelRegistrationSchema), // Added removal schema validation
+    "/:id",
+    authenticate,
+    validate(cancelRegistrationSchema),
     registrationController.cancelRegistration
   );
 

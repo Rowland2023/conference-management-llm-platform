@@ -1,7 +1,7 @@
 // src/modules/ticket/infrastructure/persistence/mappers/TicketMapper.js
 
-import { Ticket } from "../../../domain/entities/Ticket.js";
-import { Money } from "../../../domain/valueObjects/Money.js";
+import { Ticket } from "../../domain/entities/Ticket.js";
+import { Money } from "../../domain/valueObjects/Money.js";
 
 export class TicketMapper {
   static toDomain(model) {
