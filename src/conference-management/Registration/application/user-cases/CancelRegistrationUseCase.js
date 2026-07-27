@@ -1,4 +1,4 @@
-import { NotFoundError } from '../../domain/errors/DomainErrors.js';
+import { NotFoundError } from '../../../../shared/domain/error/DomainErrors.js';
 
 export class CancelRegistrationUseCase {
   constructor({ registrationRepository, conferenceRepository, outboxRepository, transactionManager }) {

@@ -1,4 +1,5 @@
-import { ValidationError } from "../../../../Shared/errors/ApplicationErrors.js";
+import { ValidationError }
+from "../../../../shared/application/errors/ApplicationErrors.js";
 
 export class ConferenceReminderService {
     /**

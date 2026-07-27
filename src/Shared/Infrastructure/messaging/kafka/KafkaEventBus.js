@@ -4,7 +4,7 @@
  */
 const KafkaProducer = require('./KafkaProducer');
 const KafkaConsumer = require('./KafkaConsumer');
-const RequestContext = require('../../../cross-cutting/request-context');
+import RequestContext from '../../../../cross-cutting/context/request-context.js';
 
 class KafkaEventBus {
   /**

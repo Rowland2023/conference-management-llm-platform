@@ -1,10 +1,9 @@
-import express from 'express';
-import { webhookRawBody } from '../../../../shared/infrastructure/middleware/webhookRawBody.js';
-import { paymentWebhookController } from '../controllers/payment.controller.js';
+// src/shared/infrastructure/middleware/webhookRawBody.js
 
-const router = express.Router();
+import express from "express";
 
-// Apply raw body capture specifically to the webhook endpoint before express.json() runs globally
-router.post('/webhook', webhookRawBody(), paymentWebhookController);
-
-export default router;
+export function webhookRawBody() {
+  return express.raw({
+    type: "application/json"
+  });
+}

@@ -1,6 +1,6 @@
 // src/modules/ticket/domain/entities/Ticket.js
-import { Money } from "../value-objects/Money.js";
-import { DomainError } from "../../../shared/domain/DomainError.js";
+import { Money } from "../valueobjects/Money.js";
+import { DomainError } from "../../../../shared/domain/error/DomainErrors.js";
 
 // Import concrete event classes
 import { TicketCreated } from "../events/TicketCreated.js";
