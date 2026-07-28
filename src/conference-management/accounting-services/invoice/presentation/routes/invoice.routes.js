@@ -1,7 +1,7 @@
 import express from 'express';
 import { z } from 'zod';
 
-export function createInvoiceRouter({
+export default function createInvoiceRoutes({
   createInvoiceUseCase,
   getInvoiceUseCase,
 }) {

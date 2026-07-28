@@ -1,12 +1,16 @@
 /**
  * @file src/presentation/controllers/account.controller.js
- * 
+ *
  * Account HTTP Controller handling account lifecycle and balance query orchestration.
  */
-const AccountSerializer = require('../serializers/account.serializer');
 
-class AccountController {
-  constructor({ createAccountUseCase, getAccountBalanceUseCase }) {
+import AccountSerializer from "../serializers/account.serializer.js";
+
+export default class AccountController {
+  constructor({
+    createAccountUseCase,
+    getAccountBalanceUseCase,
+  }) {
     this.createAccountUseCase = createAccountUseCase;
     this.getAccountBalanceUseCase = getAccountBalanceUseCase;
   }
@@ -24,7 +28,8 @@ class AccountController {
         createdBy: req.actor.id,
       };
 
-      const account = await this.createAccountUseCase.execute(commandPayload);
+      const account =
+        await this.createAccountUseCase.execute(commandPayload);
 
       return res.status(201).json({
         success: true,
@@ -42,10 +47,11 @@ class AccountController {
     try {
       const queryPayload = {
         id: req.params.id,
-        tenantId: req.actor.tenantId, // Ensure balance query is scoped to tenant
+        tenantId: req.actor.tenantId,
       };
 
-      const account = await this.getAccountBalanceUseCase.execute(queryPayload);
+      const account =
+        await this.getAccountBalanceUseCase.execute(queryPayload);
 
       return res.status(200).json({
         success: true,
@@ -56,5 +62,3 @@ class AccountController {
     }
   };
 }
-
-module.exports = AccountController;

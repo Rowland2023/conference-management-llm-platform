@@ -1,7 +1,7 @@
 // src/conference-management/accounting-services/ledger/domain/events/account-held.event.js
 
 import { BaseDomainEvent } from "./base-domain.event.js";
-import { Money } from "../value-objects/money.vo.js";
+import Money from "../value-objects/money.vo.js";
 import { InvalidArgumentError } from "../error/index.js";
 
 

@@ -12,7 +12,7 @@ import { TicketCommandService } from "./application/commands/TicketCommandServic
 
 // Presentation
 import { TicketController } from "./api/ticket.controller.js";
-import { getTicketRoutes } from "./api/ticket.route.js";
+import { createTicketRouter } from "./api/ticket.route.js";
 
 export function createTicketModule({
   db,

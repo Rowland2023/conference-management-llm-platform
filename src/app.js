@@ -1,5 +1,5 @@
 import express from "express";
-import { db } from "./cross-cutting/database/knex.js";
+import db  from "./cross-cutting/database/knex.js";
 import KnexUnitOfWork from "./cross-cutting/database/KnexUnitOfWork.js";
 
 import { KafkaEventBus } from "./shared/infrastructure/messaging/kafka/KafkaEventBus.js";

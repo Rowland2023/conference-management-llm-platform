@@ -1,61 +1,74 @@
 /**
- * @file src/presentation/routes/journal.routes.js
- * 
- * Routes for ledger journal entry operations (posting double-entry transactions, 
+ * @file src/conference-management/accounting-services/ledger/presentation/router/journal.routes.js
+ *
+ * Routes for ledger journal entry operations (posting double-entry transactions,
  * reversing posted entries, and fetching specific entry details).
  */
-const express = require('express');
-const { validate } = require('../middleware/validation.middleware');
-const { authenticate } = require('../middleware/auth.middleware');
-const {
+
+import express from "express";
+
+import { validate } from "../../../../../shared/infrastructure/middleware/validate.js";
+import { authGuard } from "../../../../../shared/infrastructure/middleware/authGuard.js";
+
+import {
   postJournalEntrySchema,
   reverseJournalEntrySchema,
   getJournalEntrySchema,
-} = require('../validators/journal.validator');
+} from "../validators/journal.validator.js";
 
 /**
  * Creates and configures the Express router for journal entry management.
- * 
- * @param {import('../controllers/journal.controller')} journalController 
- * @returns {express.Router}
+ *
+ * @param {import("../controllers/journal.controller.js").default} journalController
+ * @returns {import("express").Router}
  */
-function createJournalRoutes(journalController) {
+export default function createJournalRoutes(journalController) {
   const router = express.Router();
 
-  // Enforce authentication context (req.actor) across all journal routes
-  router.use(authenticate);
+  /**
+   * Authentication boundary.
+   * Sets req.actor from authenticated request context.
+   */
+  router.use(authGuard);
 
   /**
    * POST /journal-entries
-   * Posts a new balanced double-entry transaction.
+   *
+   * Creates a balanced double-entry journal transaction.
+   *
+   * Validation:
+   * - idempotency key
+   * - journal lines
+   * - currency consistency
+   * - debit === credit invariant
    */
   router.post(
-    '/',
+    "/",
     validate(postJournalEntrySchema),
     journalController.postEntry
   );
 
   /**
    * POST /journal-entries/:id/reverse
-   * Reverses an existing posted journal entry atomically.
+   *
+   * Creates an atomic reversal entry for an existing posted journal entry.
    */
   router.post(
-    '/:id/reverse',
+    "/:id/reverse",
     validate(reverseJournalEntrySchema),
     journalController.reverseEntry
   );
 
   /**
    * GET /journal-entries/:id
-   * Fetches journal entry details and underlying debit/credit lines.
+   *
+   * Retrieves journal entry details including debit/credit lines.
    */
   router.get(
-    '/:id',
+    "/:id",
     validate(getJournalEntrySchema),
     journalController.getEntry
   );
 
   return router;
 }
-
-module.exports = createJournalRoutes;

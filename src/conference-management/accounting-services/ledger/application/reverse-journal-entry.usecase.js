@@ -1,616 +1,193 @@
 import {
-  InvalidArgumentError,
-  ConflictError,
-  NotFoundError
+  ValidationError,
+  NotFoundError,
+  BusinessRuleViolationError,
 } from "../../../../shared/application/errors/ApplicationErrors.js";
 
-import {
-  InvalidStateError
-} from "../domain/error/index.js";
-
-import { JournalEntryReversedEvent } from "../domain/events/journal-entry-reversed.event.js";
-
-
-
-const toBigInt = (value)=>{
-
-  if(typeof value === "bigint"){
-    return value;
-  }
-
-
-  if(
-    value === null ||
-    value === undefined ||
-    value === ""
-  ){
-    return 0n;
-  }
-
-
-  return BigInt(
-    String(value).trim()
-  );
-
-};
-
-
-
-const hashLines = (lines)=>{
-
-  return lines
-    .map(line =>
-      [
-        line.accountId,
-        line.direction,
-        toBigInt(line.amountInMinorUnits),
-        line.currency
-      ].join(":")
-    )
-    .sort()
-    .join("|");
-
-};
-
-
-
-
 export class ReverseJournalEntryUseCase {
-
-
-  constructor({
-    journalEntryRepository,
-    accountRepository,
-    unitOfWork,
-    outboxRepository,
-    logger,
-    metrics
-  }){
-
-
-    this.journalRepository =
-      journalEntryRepository;
-
-
-    this.accountRepository =
-      accountRepository;
-
-
-    this.unitOfWork =
-      unitOfWork;
-
-
-    this.outboxRepository =
-      outboxRepository;
-
-
-    this.logger =
-      logger;
-
-
-    this.metrics =
-      metrics;
-
+  constructor({ journalEntryRepository, accountRepository, outboxRepository, unitOfWork, logger }) {
+    this.journalEntryRepository = journalEntryRepository;
+    this.accountRepository = accountRepository;
+    this.outboxRepository = outboxRepository;
+    this.unitOfWork = unitOfWork;
+    this.logger = logger;
   }
 
+  async execute({ originalEntryId, reversalReason, idempotencyKey, requestedBy, correlationId }) {
+    this.validateInput({ originalEntryId, reversalReason, idempotencyKey });
 
-
-
-
-  async execute({
-    originalEntryId,
-    reversalReason,
-    idempotencyKey,
-    requestedBy
-  }){
-
-
-    this.validateInput({
-      originalEntryId,
-      reversalReason,
-      idempotencyKey
-    });
-
-
-
-    const existing =
-      await this.journalRepository
-        .findByIdempotencyKey(
-          idempotencyKey
-        );
-
-
-
-    if(existing){
-
-
-      if(
-        existing.metadata?.reversedEntryId !== originalEntryId
-      ){
-
-        throw new ConflictError(
-          "Idempotency key already used for another reversal"
-        );
-
-      }
-
-
-      return {
-        ...existing,
-        isDuplicate:true
-      };
-
-
+    const duplicate = await this.findDuplicateRequest(idempotencyKey);
+    if (duplicate) {
+      return duplicate;
     }
-
-
-
-
-
-    let reversalEntry;
-
-
 
     try {
-
-
-      reversalEntry =
-        await this.unitOfWork.execute(
-          async(session)=>{
-
-
-            const original =
-              await this.journalRepository
-                .findByIdForUpdate(
-                  originalEntryId,
-                  {
-                    session
-                  }
-                );
-
-
-
-            if(!original){
-
-              throw new NotFoundError(
-                `Journal entry ${originalEntryId} not found`
-              );
-
-            }
-
-
-
-
-            if(
-              original.status !== "POSTED"
-            ){
-
-              throw new InvalidStateError(
-                `Cannot reverse ${original.status} entry`
-              );
-
-            }
-
-
-
-
-
-            const accountIds =
-              [
-                ...new Set(
-                  original.lines
-                    .map(
-                      line=>line.accountId
-                    )
-                )
-              ]
-              .sort();
-
-
-
-
-
-            const accounts =
-              await this.accountRepository
-                .findAndLockByIds(
-                  accountIds,
-                  {
-                    session
-                  }
-                );
-
-
-
-
-
-            if(
-              accounts.length !== accountIds.length
-            ){
-
-              throw new InvalidStateError(
-                "Missing account during reversal"
-              );
-
-            }
-
-
-
-
-
-            this.validateAccounts(
-              accounts
-            );
-
-
-
-
-
-            const reversalLines =
-              this.buildReversalLines(
-                original.lines
-              );
-
-
-
-
-
-            const created =
-              await this.journalRepository
-                .create(
-                  {
-
-                    idempotencyKey,
-
-                    description:
-                      `REVERSAL OF ${originalEntryId}: ${reversalReason}`,
-
-
-                    currency:
-                      original.currency,
-
-
-                    status:
-                      "POSTED",
-
-
-                    postedAt:
-                      new Date(),
-
-
-                    metadata:{
-
-
-                      reversedEntryId:
-                        originalEntryId,
-
-
-                      reversalReason,
-
-
-                      requestedBy,
-
-
-                      originalHash:
-                        hashLines(
-                          original.lines
-                        )
-
-                    },
-
-
-                    lines:
-                      reversalLines
-
-
-                  },
-                  {
-                    session
-                  }
-                );
-
-
-
-
-
-            await this.journalRepository
-              .updateStatus(
-                originalEntryId,
-                "REVERSED",
-                {
-                  reversalEntryId:
-                    created.id
-                },
-                {
-                  session
-                }
-              );
-
-
-
-
-
-
-
-            const event =
-              new JournalEntryReversed({
-
-                originalEntryId,
-
-                reversalEntryId:
-                  created.id,
-
-                currency:
-                  original.currency
-
-              });
-
-
-
-
-
-
-            await this.outboxRepository
-              .add(
-                event,
-                {
-                  session
-                }
-              );
-
-
-
-
-
-            return created;
-
-
-          }
-        );
-
-
-
-    }catch(error){
-
-
-      if(error.code === "23505"){
-
-
-        const duplicate =
-          await this.journalRepository
-            .findByIdempotencyKey(
-              idempotencyKey
-            );
-
-
-        if(duplicate){
-
-          return {
-            ...duplicate,
-            isDuplicate:true
-          };
-
-        }
-
-
-      }
-
-
-
-      throw error;
-
-    }
-
-
-
-
-
-
-    this.logger?.info({
-
-      event:
-        "LEDGER_ENTRY_REVERSED",
-
-      originalEntryId,
-
-      reversalEntryId:
-        reversalEntry.id,
-
-      requestedBy
-
-    });
-
-
-
-
-
-    this.metrics?.increment(
-      "ledger.reversal.count",
-      1,
-      {
-        currency:
-          reversalEntry.currency
-      }
-    );
-
-
-
-
-
-    return {
-
-      ...reversalEntry,
-
-      isDuplicate:false
-
-    };
-
-
-  }
-
-
-
-
-
-
-
-  validateInput({
-    originalEntryId,
-    reversalReason,
-    idempotencyKey
-  }){
-
-
-    if(
-      !originalEntryId ||
-      !idempotencyKey ||
-      !reversalReason
-    ){
-
-      throw new InvalidArgumentError(
-        "originalEntryId, reversalReason and idempotencyKey are required"
-      );
-
-    }
-
-
-
-
-    if(
-      reversalReason.length < 10
-    ){
-
-      throw new InvalidArgumentError(
-        "reversalReason must contain audit details"
-      );
-
-    }
-
-
-  }
-
-
-
-
-
-
-
-
-  validateAccounts(accounts){
-
-
-    for(const account of accounts){
-
-
-      if(
-        account.status !== "ACTIVE"
-      ){
-
-        throw new InvalidStateError(
-          `Account ${account.id} is ${account.status}`
-        );
-
-      }
-
-
-    }
-
-
-  }
-
-
-
-
-
-
-
-
-  buildReversalLines(lines){
-
-
-    let debit = 0n;
-    let credit = 0n;
-
-
-
-    const reversed =
-      lines.map(line=>{
-
-
-        const amount =
-          toBigInt(
-            line.amountInMinorUnits
-          );
-
-
-
-        if(amount <= 0n){
-
-          throw new InvalidStateError(
-            "Invalid reversal amount"
-          );
-
-        }
-
-
-
-        const direction =
-          line.direction === "DEBIT"
-            ? "CREDIT"
-            : "DEBIT";
-
-
-
-        if(direction === "DEBIT"){
-          debit += amount;
-        }
-        else{
-          credit += amount;
-        }
-
-
-
-        return {
-
-          accountId:
-            line.accountId,
-
-
-          amountInMinorUnits:
-            amount.toString(),
-
-
-          direction,
-
-
-          currency:
-            line.currency
-
-        };
-
-
+      return await this.unitOfWork.execute(async (session) => {
+        const originalEntry = await this.loadOriginalEntry({ originalEntryId, session });
+        
+        const accounts = await this.lockAccounts({ originalEntry, session });
+        const expectedAccountCount = [...new Set(originalEntry.lines.map(l => l.accountId))].length;
+        this.validateAccounts(accounts, expectedAccountCount);
+
+        const reversedLines = this.buildReversalLines(originalEntry.lines);
+        this.validateAccountingInvariant(reversedLines);
+
+        const reversalEntryPayload = this.buildReversalPayload({
+          originalEntry,
+          reversedLines,
+          reversalReason,
+          idempotencyKey,
+          requestedBy,
+          correlationId,
+        });
+
+        const reversalEntry = await this.createReversalEntry({ reversalEntryPayload, session });
+
+        await this.markOriginalAsReversed({
+          originalEntryId,
+          reversalEntryId: reversalEntry.id,
+          session,
+        });
+
+        await this.publishReversalEvent({ reversalEntry, session });
+
+        this.recordSuccess({ originalEntryId, reversalEntryId: reversalEntry.id, correlationId });
+
+        return { ...reversalEntry, isDuplicate: false };
       });
-
-
-
-
-
-    if(debit !== credit){
-
-      throw new InvalidStateError(
-        `Reversal is unbalanced ${debit}:${credit}`
-      );
-
+    } catch (error) {
+      const concurrent = await this.handleConcurrencyError({ error, idempotencyKey });
+      if (concurrent) {
+        return concurrent;
+      }
+      throw error;
     }
-
-
-
-
-
-    return reversed;
-
-
   }
 
+  validateInput({ originalEntryId, reversalReason, idempotencyKey }) {
+    if (!originalEntryId || typeof originalEntryId !== 'string') {
+      throw new InvalidArgumentError('originalEntryId required');
+    }
+    if (!idempotencyKey || typeof idempotencyKey !== 'string') {
+      throw new InvalidArgumentError('idempotencyKey required');
+    }
+    if (!reversalReason || typeof reversalReason !== 'string') {
+      throw new InvalidArgumentError('reversalReason required for audit');
+    }
+  }
 
+  async findDuplicateRequest(idempotencyKey) {
+    const existing = await this.journalEntryRepository.findByIdempotencyKey(idempotencyKey);
+    if (existing) {
+      return { ...existing, isDuplicate: true };
+    }
+    return null;
+  }
 
+  async loadOriginalEntry({ originalEntryId, session }) {
+    const originalEntry = await this.journalEntryRepository.findByIdForUpdate(originalEntryId, { session });
+    if (!originalEntry) {
+      throw new NotFoundError(`Journal entry ${originalEntryId} not found`);
+    }
+    if (originalEntry.status === 'REVERSED') {
+      throw new InvalidStateError(`Entry ${originalEntryId} already REVERSED`);
+    }
+    return originalEntry;
+  }
+
+  async lockAccounts({ originalEntry, session }) {
+    const accountIds = [...new Set(originalEntry.lines.map(l => l.accountId))].sort();
+    return await this.accountRepository.findAndLockByIds(accountIds, { session });
+  }
+
+  validateAccounts(accounts, expectedCount) {
+    if (!accounts || accounts.length !== expectedCount) {
+      throw new InvalidStateError('One or more accounts no longer exist');
+    }
+    for (const acc of accounts) {
+      if (acc.status && acc.status !== 'ACTIVE') {
+        throw new InvalidStateError(`Account ${acc.id} is ${acc.status}`);
+      }
+    }
+  }
+
+  buildReversalLines(lines) {
+    return lines.map(line => {
+      if (line.amountInMinorUnits == null) {
+        throw new InvalidStateError('Line missing amountInMinorUnits');
+      }
+      return {
+        accountId: line.accountId,
+        amountInMinorUnits: line.amountInMinorUnits,
+        direction: line.direction === 'DEBIT' ? 'CREDIT' : 'DEBIT',
+        currency: line.currency,
+      };
+    });
+  }
+
+  validateAccountingInvariant(reversedLines) {
+    const debits = reversedLines
+      .filter(l => l.direction === 'DEBIT')
+      .reduce((s, l) => s + BigInt(l.amountInMinorUnits), 0n);
+    const credits = reversedLines
+      .filter(l => l.direction === 'CREDIT')
+      .reduce((s, l) => s + BigInt(l.amountInMinorUnits), 0n);
+    
+    if (debits !== credits) {
+      throw new InvalidStateError(`Accounting invariant violation: Debit ${debits} != Credit ${credits}`);
+    }
+  }
+
+  buildReversalPayload({ originalEntry, reversedLines, reversalReason, idempotencyKey, requestedBy, correlationId }) {
+    return {
+      idempotencyKey,
+      correlationId: correlationId || originalEntry.correlationId,
+      description: `Reversal of Entry #${originalEntry.id}: ${reversalReason}`,
+      currency: originalEntry.currency,
+      status: 'POSTED',
+      postedAt: new Date(),
+      metadata: {
+        reversedEntryId: originalEntry.id,
+        reversalReason,
+        requestedBy: requestedBy || 'SYSTEM',
+        originalIdempotencyKey: originalEntry.idempotencyKey,
+      },
+      lines: reversedLines,
+    };
+  }
+
+  async createReversalEntry({ reversalEntryPayload, session }) {
+    return await this.journalEntryRepository.create(reversalEntryPayload, { session });
+  }
+
+  async markOriginalAsReversed({ originalEntryId, reversalEntryId, session }) {
+    await this.journalEntryRepository.updateStatus(
+      originalEntryId, 'REVERSED', { reversalEntryId }, { session }
+    );
+  }
+
+  async publishReversalEvent({ reversalEntry, session }) {
+    await this.outboxRepository.create({
+      aggregateType: 'JOURNAL_ENTRY',
+      aggregateId: reversalEntry.id,
+      eventType: 'JournalEntryReversed',
+      payload: reversalEntry,
+      correlationId: reversalEntry.correlationId,
+      idempotencyKey: `outbox-${reversalEntry.id}`,
+    }, { session });
+  }
+
+  recordSuccess({ originalEntryId, reversalEntryId, correlationId }) {
+    this.logger?.info({ message: 'Journal reversed', originalEntryId, reversalEntryId, correlationId });
+  }
+
+  async handleConcurrencyError({ error, idempotencyKey }) {
+    if (error.code === '23505' || error.name === 'UniqueConstraintError') {
+      const concurrent = await this.journalEntryRepository.findByIdempotencyKey(idempotencyKey);
+      if (concurrent) {
+        return { ...concurrent, isDuplicate: true };
+      }
+    }
+    return null;
+  }
 }

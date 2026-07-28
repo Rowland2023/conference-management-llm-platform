@@ -137,9 +137,10 @@ export function createPaymentModule({
     });
 
   const router =
-    createPaymentRouter({
-      paymentController
-    });
+  createPaymentRouter({
+    paymentController,
+    paymentWebhookController,
+  });
 
 
 

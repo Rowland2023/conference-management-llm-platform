@@ -4,27 +4,33 @@
  */
 
 // Shared Infrastructure Adapters
-const { OutboxRepository } = require('../../shared/infrastructure');
+import { OutboxRepository } from "../../shared/infrastructure/index.js";
 
 // Domain & Application Use Cases
-const ProcessRefundUseCase = require('./application/ProcessRefundUseCase');
-const RefundService = require('./application/RefundService');
+import ProcessRefundUseCase from "./application/ProcessRefundUseCase.js";
+import RefundService from "./application/RefundService.js";
 
 // Infrastructure Adapters & Repositories
-const RefundRepository = require('./infrastructure/repositories/RefundRepository');
-const { PaystackGatewayAdapter } = require('./infrastructure/adapters/PaymentGatewayAdapter');
+import RefundRepository from "./infrastructure/repositories/RefundRepository.js";
+
+import {
+  PaystackGatewayAdapter,
+} from "./infrastructure/adapters/PaymentGatewayAdapter.js";
 
 // Presentation / HTTP Layer
-const RefundController = require('./presentation/http/RefundController');
+import RefundController from "./presentation/http/RefundController.js";
+
+
 
 /**
  * Bootstraps and wires all dependencies for the Refund Context.
  *
  * @param {Object} params
- * @param {import('knex').Knex} params.knex - Database connection instance
- * @param {Object} params.httpClient - Configured HTTP client (Axios/Fetch)
- * @param {Object} params.dbTransactionManager - Isolation manager for DB transactions
- * @param {Object} [params.logger] - Structured logger (Winston/Pino)
+ * @param {import('knex').Knex} params.knex
+ * @param {Object} params.httpClient
+ * @param {Object} params.dbTransactionManager
+ * @param {Object} [params.logger]
+ *
  * @returns {{
  *   refundController: RefundController,
  *   refundService: RefundService,
@@ -32,54 +38,148 @@ const RefundController = require('./presentation/http/RefundController');
  *   refundRepository: RefundRepository
  * }}
  */
-function createRefundModule({ knex, httpClient, dbTransactionManager, logger = console }) {
-  // 1. Guard Critical Infrastructure Configuration
-  const paystackSecretKey = process.env.PAYSTACK_SECRET_KEY;
+function createRefundModule({
+  knex,
+  httpClient,
+  dbTransactionManager,
+  logger = console,
+}) {
+
+
+  // ---------------------------------------------------------------------------
+  // 1. Validate Infrastructure Configuration
+  // ---------------------------------------------------------------------------
+
+  const paystackSecretKey =
+    process.env.PAYSTACK_SECRET_KEY;
+
+
   if (!paystackSecretKey) {
-    throw new Error('[RefundModuleContainer] Initialization failed: PAYSTACK_SECRET_KEY environment variable is required.');
+
+    throw new Error(
+      "[RefundModuleContainer] Initialization failed: PAYSTACK_SECRET_KEY environment variable is required."
+    );
+
   }
 
-  // 2. Instantiate Infrastructure Repositories & Adapters
-  const outboxRepository = new OutboxRepository({ knex });
-  const refundRepository = new RefundRepository({ knex });
 
-  const paymentGatewayAdapter = new PaystackGatewayAdapter({
-    httpClient,
-    secretKey: paystackSecretKey,
-  });
 
+
+  // ---------------------------------------------------------------------------
+  // 2. Instantiate Infrastructure Layer
+  // ---------------------------------------------------------------------------
+
+  const outboxRepository =
+    new OutboxRepository({
+      knex,
+    });
+
+
+
+  const refundRepository =
+    new RefundRepository({
+      knex,
+    });
+
+
+
+  const paymentGatewayAdapter =
+    new PaystackGatewayAdapter({
+
+      httpClient,
+
+      secretKey:
+        paystackSecretKey,
+
+    });
+
+
+
+
+
+  // ---------------------------------------------------------------------------
   // 3. Instantiate Application Use Cases
-  const processRefundUseCase = new ProcessRefundUseCase({
-    refundRepository,
-    paymentGatewayAdapter,
-    outboxRepository,
-    dbTransactionManager,
-    logger,
-  });
+  // ---------------------------------------------------------------------------
 
-  // 4. Instantiate Application Service Orchestrator
-  const refundService = new RefundService({
-    refundRepository,
-    paymentGatewayAdapter,
-    outboxRepository,
-    processRefundUseCase,
-    dbTransactionManager,
-    logger,
-  });
+  const processRefundUseCase =
+    new ProcessRefundUseCase({
 
-  // 5. Instantiate HTTP Controller with Method Autobinding
-  const refundController = new RefundController({
-    refundService,
-  });
+      refundRepository,
 
-  // Return composition root dependencies for Express routes & background workers
+      paymentGatewayAdapter,
+
+      outboxRepository,
+
+      dbTransactionManager,
+
+      logger,
+
+    });
+
+
+
+
+
+  // ---------------------------------------------------------------------------
+  // 4. Instantiate Application Service
+  // ---------------------------------------------------------------------------
+
+  const refundService =
+    new RefundService({
+
+      refundRepository,
+
+      paymentGatewayAdapter,
+
+      outboxRepository,
+
+      processRefundUseCase,
+
+      dbTransactionManager,
+
+      logger,
+
+    });
+
+
+
+
+
+  // ---------------------------------------------------------------------------
+  // 5. Instantiate Presentation Layer
+  // ---------------------------------------------------------------------------
+
+  const refundController =
+    new RefundController({
+
+      refundService,
+
+    });
+
+
+
+
+
+  // ---------------------------------------------------------------------------
+  // Composition Root Output
+  // ---------------------------------------------------------------------------
+
   return {
+
     refundController,
+
     refundService,
+
     processRefundUseCase,
+
     refundRepository,
+
     outboxRepository,
+
   };
+
 }
 
-module.exports = createRefundModule;
+
+
+export default createRefundModule;

@@ -1,17 +1,18 @@
 /**
  * @file src/domain/value-objects/account-type.vo.js
- * 
+ *
  * Value Object representing the fundamental double-entry account categories.
  * Encapsulates normal balance rules (Debit-normal vs Credit-normal).
  */
-const { InvalidArgumentError } = require('../errors');
 
-class AccountType {
-  static ASSET = 'ASSET';
-  static LIABILITY = 'LIABILITY';
-  static EQUITY = 'EQUITY';
-  static REVENUE = 'REVENUE';
-  static EXPENSE = 'EXPENSE';
+import { InvalidArgumentError } from "../error/index.js";
+
+export default class AccountType {
+  static ASSET = "ASSET";
+  static LIABILITY = "LIABILITY";
+  static EQUITY = "EQUITY";
+  static REVENUE = "REVENUE";
+  static EXPENSE = "EXPENSE";
 
   static VALID_TYPES = Object.freeze([
     AccountType.ASSET,
@@ -22,70 +23,98 @@ class AccountType {
   ]);
 
   /**
-   * @param {string|AccountType} value 
+   * @param {string|AccountType} value
    */
   constructor(value) {
     if (!value) {
-      throw new InvalidArgumentError('AccountType: value is required');
-    }
-
-    const rawValue = value instanceof AccountType ? value.value : value;
-    
-    if (typeof rawValue !== 'string') {
-      throw new InvalidArgumentError(`AccountType: value must be a string, received ${typeof value}`);
-    }
-
-    const formatted = rawValue.trim().toUpperCase();
-
-    if (!AccountType.VALID_TYPES.includes(formatted)) {
       throw new InvalidArgumentError(
-        `AccountType: invalid type '${value}'. Permitted values: ${AccountType.VALID_TYPES.join(', ')}`
+        "AccountType: value is required."
       );
     }
 
-    this._value = formatted;
+    const rawValue =
+      value instanceof AccountType
+        ? value.value
+        : value;
+
+    if (typeof rawValue !== "string") {
+      throw new InvalidArgumentError(
+        `AccountType: value must be a string. Received ${typeof rawValue}.`
+      );
+    }
+
+    const normalized =
+      rawValue
+        .trim()
+        .toUpperCase();
+
+    if (
+      !AccountType.VALID_TYPES.includes(
+        normalized
+      )
+    ) {
+      throw new InvalidArgumentError(
+        `AccountType: invalid type '${rawValue}'. Valid values are: ${AccountType.VALID_TYPES.join(", ")}.`
+      );
+    }
+
+    this._value = normalized;
+
     Object.freeze(this);
   }
 
-  get value() { return this._value; }
+  //---------------------------------------------------------
+  // Getters
+  //---------------------------------------------------------
 
-  // --- Domain Methods ---
+  get value() {
+    return this._value;
+  }
+
+  //---------------------------------------------------------
+  // Domain Rules
+  //---------------------------------------------------------
 
   /**
-   * Returns true if a DEBIT entry increases this account's balance (Assets & Expenses).
-   * @returns {boolean}
+   * Assets and Expenses increase with debits.
    */
   isNormalDebitBalance() {
-    return this._value === AccountType.ASSET || this._value === AccountType.EXPENSE;
+    return (
+      this._value === AccountType.ASSET ||
+      this._value === AccountType.EXPENSE
+    );
   }
 
   /**
-   * Returns true if a CREDIT entry increases this account's balance (Liabilities, Equity, Revenue).
-   * @returns {boolean}
+   * Liabilities, Equity and Revenue increase with credits.
    */
   isNormalCreditBalance() {
     return !this.isNormalDebitBalance();
   }
 
-  /**
-   * Compares two AccountType instances for structural equality.
-   * @param {any} other 
-   * @returns {boolean}
-   */
+  //---------------------------------------------------------
+  // Equality
+  //---------------------------------------------------------
+
   equals(other) {
     if (other instanceof AccountType) {
       return this._value === other.value;
     }
-    if (typeof other === 'string') {
-      return this._value === other.trim().toUpperCase();
+
+    if (typeof other === "string") {
+      return (
+        this._value ===
+        other.trim().toUpperCase()
+      );
     }
+
     return false;
   }
 
-  /**
-   * Guarantees clean serialization during JSON.stringify()
-   * @returns {string}
-   */
+  //---------------------------------------------------------
+  // Serialization
+  //---------------------------------------------------------
+
   toJSON() {
     return this._value;
   }
@@ -94,5 +123,3 @@ class AccountType {
     return this._value;
   }
 }
-
-module.exports = AccountType;
