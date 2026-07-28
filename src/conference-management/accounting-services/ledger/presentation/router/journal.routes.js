@@ -1,42 +1,48 @@
-const express = require('express');
-const { validate } = require('../middleware/validation.middleware');
-const { authenticate } = require('../middleware/auth.middleware');
-const { idempotency } = require('../middleware/idempotency.middleware'); // you have this
-const { correlation } = require('../middleware/correlation.middleware');
-const {
+/**
+ * @file src/presentation/routes/journal.routes.js
+ *
+ * Routes for ledger journal entry operations.
+ */
+
+import express from "express";
+
+import { validate } from "../../../../../shared/infrastructure/middleware/validate.js";
+import { authGuard } from "../../../../../shared/infrastructure/middleware/authGuard.js";
+import { idempotency } from "../../../../../shared/infrastructure/middleware/idempotency.js";
+import { correlationIdMiddleware } from "../../../../../shared/infrastructure/middleware/correlationId.js";
+import {
   postJournalEntrySchema,
   reverseJournalEntrySchema,
   getJournalEntrySchema,
-} = require('../validators/journal.validator');
+} from "../validators/journal.validator.js";
 
-function createJournalRoutes(journalController) {
+export default function createJournalRoutes(journalController) {
   const router = express.Router();
 
-  // Order matters: correlation -> auth -> validation -> controller
-  router.use(correlation); 
-  router.use(authenticate);
+  // Request context pipeline:
+  // correlation -> authentication -> idempotency -> validation -> controller
+  router.use(correlationIdMiddleware);
+  router.use(authGuard);
 
   router.post(
-    '/',
-    idempotency, // extracts header, ensures required
+    "/",
+    idempotency,
     validate(postJournalEntrySchema),
     journalController.postEntry
   );
 
   router.post(
-    '/:id/reverse',
+    "/:id/reverse",
     idempotency,
     validate(reverseJournalEntrySchema),
     journalController.reverseEntry
   );
 
   router.get(
-    '/:id',
+    "/:id",
     validate(getJournalEntrySchema),
     journalController.getEntry
   );
 
   return router;
 }
-
-module.exports = createJournalRoutes;

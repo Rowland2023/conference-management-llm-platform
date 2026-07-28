@@ -5,7 +5,7 @@ import { PostgresInvoiceRepository } from './infrastructure/repositories/Postgre
 import { CreateInvoiceUseCase } from './application/use-cases/CreateInvoiceUseCase.js';
 import { GetInvoiceUseCase } from './application/use-cases/GetInvoiceUseCase.js';
 
-import { createInvoiceRouter } from './presentation/routes/invoice.routes.js';
+import { createInvoiceRouter } from "./invoice/presentation/routes/invoice.routes.js";
 
 export function createInvoiceModule() {
   // Infrastructure

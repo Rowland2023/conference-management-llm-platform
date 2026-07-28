@@ -1,69 +1,106 @@
 /**
- * @file src/modules/ledger/infrastructure/mappers/journal-entry.mapper.js
+ * @file journal-entry.mapper.js
+ *
+ * Maps between PostgreSQL persistence rows and
+ * JournalEntryAggregate domain objects.
  */
-const JournalEntryAggregate = require('../../domain/aggregates/journal-entry.aggregate');
 
-class JournalEntryMapper {
-  static toDomain(rawEntry, rawLines = []) {
-    if (!rawEntry) return null;
+import JournalEntryAggregate from "../../domain/aggregates/journal-entry/journal-entry.aggregate.js";
 
-    let metadata = {};
-    try {
-      metadata = typeof rawEntry.metadata === 'string' 
-        ? JSON.parse(rawEntry.metadata) 
-        : (rawEntry.metadata || {});
-    } catch {
-      metadata = {}; // fail safe, log warning in real prod
+export default class JournalEntryMapper {
+  static #parseMetadata(metadata) {
+    if (!metadata) {
+      return {};
     }
 
-    const lines = rawLines.map((line) => ({
+    if (typeof metadata === "object") {
+      return metadata;
+    }
+
+    try {
+      return JSON.parse(metadata);
+    } catch {
+      return {};
+    }
+  }
+
+  static #toBigInt(value) {
+    if (value === null || value === undefined) {
+      return 0n;
+    }
+
+    if (typeof value === "bigint") {
+      return value;
+    }
+
+    return BigInt(value.toString());
+  }
+
+  static #mapLineToDomain(line) {
+    return {
       id: line.id,
       accountId: line.account_id,
-      amountInMinorUnits: line.amount ? BigInt(line.amount) : 0n, // canonical name
+      amountInMinorUnits: this.#toBigInt(line.amount),
       direction: line.direction,
       currency: line.currency,
-    }));
+    };
+  }
+
+  static toDomain(row, lineRows = []) {
+    if (!row) {
+      return null;
+    }
 
     return new JournalEntryAggregate({
-      id: rawEntry.id,
-      idempotencyKey: rawEntry.idempotency_key,
-      correlationId: rawEntry.correlation_id,
-      tenantId: rawEntry.tenant_id,
-      description: rawEntry.description,
-      currency: rawEntry.currency,
-      status: rawEntry.status,
-      postedAt: rawEntry.posted_at ? new Date(rawEntry.posted_at) : null,
-      lines,
-      metadata,
+      id: row.id,
+      tenantId: row.tenant_id,
+      idempotencyKey: row.idempotency_key,
+      correlationId: row.correlation_id,
+      description: row.description,
+      currency: row.currency,
+      status: row.status,
+      postedAt: row.posted_at ? new Date(row.posted_at) : null,
+      metadata: this.#parseMetadata(row.metadata),
+      lines: lineRows.map((line) => this.#mapLineToDomain(line)),
     });
   }
 
   static toPersistence(aggregate) {
-    const json = typeof aggregate.toJSON === 'function' ? aggregate.toJSON() : aggregate;
+    if (!aggregate) {
+      return null;
+    }
+
+    const json =
+      typeof aggregate.toJSON === "function"
+        ? aggregate.toJSON()
+        : aggregate;
 
     const entryRow = {
       id: json.id,
-      idempotency_key: json.idempotencyKey,
-      correlation_id: json.correlationId, // you need this for tracing
       tenant_id: json.tenantId,
+      idempotency_key: json.idempotencyKey,
+      correlation_id: json.correlationId,
       description: json.description,
       currency: json.currency,
       status: json.status,
       posted_at: json.postedAt ? new Date(json.postedAt) : new Date(),
-      metadata: JSON.stringify(json.metadata || {}),
+      metadata: JSON.stringify(json.metadata ?? {}),
     };
 
-    const lineRows = (json.lines || []).map((line) => ({
-      id: line.id || undefined, // let DB gen if new
+    const lineRows = (json.lines ?? []).map((line) => ({
+      id: line.id,
       journal_entry_id: json.id,
       account_id: line.accountId,
-      amount: (line.amountInMinorUnits ?? line.amount ?? 0n).toString(), // backwards compat
+      amount: this.#toBigInt(
+        line.amountInMinorUnits ?? line.amount
+      ).toString(),
       direction: line.direction,
-      currency: line.currency || json.currency,
+      currency: line.currency ?? json.currency,
     }));
 
-    return { entryRow, lineRows };
+    return {
+      entryRow,
+      lineRows,
+    };
   }
 }
-
-module.exports = JournalEntryMapper;

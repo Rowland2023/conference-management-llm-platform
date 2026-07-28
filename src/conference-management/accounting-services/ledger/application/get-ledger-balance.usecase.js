@@ -1,62 +1,33 @@
 /**
  * @file get-ledger-balance.usecase.js
  *
- * Application service responsible for retrieving ledger balances.
- * Enforces:
- * - Input validation
- * - Account status checks
- * - Currency consistency
- * - Safe money serialization
- * - Observability
+ * Retrieves an account's ledger balance as of a specific date.
  */
 
 import {
-  InvalidArgumentError,
+  ValidationError,
   NotFoundError,
 } from "../../../../shared/application/errors/ApplicationErrors.js";
 
-/**
- * Safely converts database numeric values into BigInt minor units.
- *
- * Handles:
- * - bigint
- * - string
- * - number
- * - decimal database values
- *
- * Example:
- * "1000.50" => 1000n
- */
-function toBigIntSafe(value) {
+const toBigIntSafe = (value) => {
   if (typeof value === "bigint") {
     return value;
   }
 
-  if (
-    value === null ||
-    value === undefined ||
-    value === ""
-  ) {
+  if (value === null || value === undefined || value === "") {
     return 0n;
   }
 
-  const normalized = String(value)
-    .trim()
-    .split(".")[0];
+  const normalized = String(value).trim().split(".")[0];
 
-  if (
-    !normalized ||
-    Number.isNaN(Number(normalized))
-  ) {
+  if (!normalized || Number.isNaN(Number(normalized))) {
     return 0n;
   }
 
   return BigInt(normalized);
-}
-
+};
 
 export class GetLedgerBalanceUseCase {
-
   constructor({
     accountRepository,
     journalEntryRepository,
@@ -69,207 +40,155 @@ export class GetLedgerBalanceUseCase {
     this.metrics = metrics;
   }
 
-
   async execute({
     accountId,
     currency,
     asOfDate,
     requestedBy,
   }) {
-
-    /*
-     * 1. Validate input
-     */
-    if (
-      !accountId ||
-      typeof accountId !== "string"
-    ) {
-      throw new InvalidArgumentError(
-        "accountId must be a valid string"
-      );
-    }
-
+    this.validateInput(accountId, asOfDate);
 
     const effectiveDate = asOfDate
       ? new Date(asOfDate)
       : new Date();
 
+    const account = await this.loadAccount(accountId);
 
+    const targetCurrency = this.resolveCurrency(
+      account,
+      currency
+    );
+
+    const balances =
+      await this.journalEntryRepository.calculateAccountBalance({
+        accountId: account.id,
+        currency: targetCurrency,
+        asOfDate: effectiveDate,
+      });
+
+    const postedBalance = toBigIntSafe(
+      balances.postedBalance
+    );
+
+    const pendingBalance = toBigIntSafe(
+      balances.pendingBalance
+    );
+
+    const availableBalance =
+      postedBalance - pendingBalance;
+
+    this.recordMetrics({
+      account,
+      currency: targetCurrency,
+      asOfDate: effectiveDate,
+      requestedBy,
+    });
+
+    return {
+      accountId: account.id,
+      accountName: account.name,
+      currency: targetCurrency,
+      balance: postedBalance.toString(),
+      pendingBalance: pendingBalance.toString(),
+      availableBalance:
+        availableBalance.toString(),
+      asOf: effectiveDate.toISOString(),
+    };
+  }
+
+  validateInput(accountId, asOfDate) {
     if (
-      Number.isNaN(
-        effectiveDate.getTime()
-      )
+      !accountId ||
+      typeof accountId !== "string"
     ) {
-      throw new InvalidArgumentError(
-        "asOfDate must be a valid ISO-8601 date"
+      throw new ValidationError(
+        "accountId must be a valid string."
       );
     }
 
+    if (asOfDate) {
+      const date = new Date(asOfDate);
 
-    if (
-      effectiveDate.getTime() >
-      Date.now()
-    ) {
-      throw new InvalidArgumentError(
-        "asOfDate cannot be in the future"
-      );
+      if (Number.isNaN(date.getTime())) {
+        throw new ValidationError(
+          "asOfDate must be a valid ISO-8601 date."
+        );
+      }
+
+      if (date > new Date()) {
+        throw new ValidationError(
+          "asOfDate cannot be in the future."
+        );
+      }
     }
+  }
 
-
-
-    /*
-     * 2. Load account
-     */
+  async loadAccount(accountId) {
     const account =
       await this.accountRepository.findById(
         accountId
       );
 
-
     if (!account) {
       throw new NotFoundError(
-        `Account ${accountId} not found`
+        `Account '${accountId}' not found.`
       );
     }
-
 
     if (
       account.status &&
       account.status !== "ACTIVE"
     ) {
-      throw new InvalidArgumentError(
-        `Account ${accountId} is inactive`
+      throw new ValidationError(
+        `Account '${accountId}' is ${account.status}.`
       );
     }
 
+    return account;
+  }
 
-
-    /*
-     * 3. Validate currency
-     */
-    const targetCurrency =
-      (
-        currency ||
-        account.currency
-      ).toUpperCase();
-
+  resolveCurrency(account, requestedCurrency) {
+    const currency = (
+      requestedCurrency ??
+      account.currency
+    )?.toUpperCase();
 
     if (
       account.currency &&
-      targetCurrency !==
-      account.currency.toUpperCase()
+      currency !== account.currency.toUpperCase()
     ) {
-      throw new InvalidArgumentError(
-        `Currency mismatch. Account currency is ${account.currency}`
+      throw new ValidationError(
+        `Currency mismatch. Account currency is ${account.currency}.`
       );
     }
 
+    return currency;
+  }
 
-
-    /*
-     * 4. Calculate ledger balance
-     */
-    const balanceDetails =
-      await this.journalEntryRepository
-        .calculateAccountBalance({
-          accountId: account.id,
-          currency: targetCurrency,
-          asOfDate: effectiveDate,
-        });
-
-
-
-    const postedBalance =
-      toBigIntSafe(
-        balanceDetails.postedBalance
-      );
-
-
-    const pendingBalance =
-      toBigIntSafe(
-        balanceDetails.pendingBalance
-      );
-
-
-    const availableBalance =
-      postedBalance - pendingBalance;
-
-
-
-    /*
-     * 5. Observability
-     */
-    const actorId =
+  recordMetrics({
+    account,
+    currency,
+    asOfDate,
+    requestedBy,
+  }) {
+    const actor =
       typeof requestedBy === "object"
-        ? (
-            requestedBy?.id ||
-            requestedBy?.userId
-          )
+        ? requestedBy?.id ??
+          requestedBy?.userId
         : requestedBy;
 
-
-    this.logger?.info(
-      {
-        event:
-          "LEDGER_BALANCE_CHECKED",
-
-        accountId:
-          account.id,
-
-        currency:
-          targetCurrency,
-
-        asOf:
-          effectiveDate.toISOString(),
-
-        requestedBy:
-          actorId || "SYSTEM",
-      }
-    );
-
+    this.logger?.info({
+      event: "LEDGER_BALANCE_CHECKED",
+      accountId: account.id,
+      currency,
+      asOf: asOfDate.toISOString(),
+      requestedBy: actor ?? "SYSTEM",
+    });
 
     this.metrics?.increment(
       "ledger.balance.checked",
       1,
-      {
-        currency:
-          targetCurrency,
-      }
+      { currency }
     );
-
-
-
-    /*
-     * 6. Return immutable response
-     */
-    return {
-
-      accountId:
-        account.id,
-
-
-      accountName:
-        account.name,
-
-
-      currency:
-        targetCurrency,
-
-
-      balance:
-        postedBalance.toString(),
-
-
-      pendingBalance:
-        pendingBalance.toString(),
-
-
-      availableBalance:
-        availableBalance.toString(),
-
-
-      asOf:
-        effectiveDate.toISOString(),
-    };
   }
 }

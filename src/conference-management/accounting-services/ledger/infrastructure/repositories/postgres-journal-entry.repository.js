@@ -1,73 +1,209 @@
-const db = require('../../../../cross-cutting/database/knex');
-const JournalEntryMapper = require('../mappers/journal-entry.mapper');
+/**
+ * @file postgres-journal-entry.repository.js
+ *
+ * PostgreSQL implementation of JournalEntryRepository.
+ *
+ * Responsibilities:
+ * - Persist journal entries and lines
+ * - Enforce tenant isolation
+ * - Support row-level locking
+ * - Support idempotency lookups
+ * - Update journal entry status
+ */
 
-class PostgresJournalEntryRepository {
-  async save(aggregate, { transaction, tenantId } = {}) {
-    const client = transaction || db;
-    const { entryRow, lineRows } = JournalEntryMapper.toPersistence(aggregate);
+import db
+  from "../../../../../cross-cutting/database/knex.js";
 
-    const finalTenantId = tenantId || entryRow.tenant_id;
-    if (!finalTenantId) throw new Error('tenant_id required');
+import JournalEntryMapper
+  from "../mappers/journal-entry.mapper.js";
 
-    entryRow.tenant_id = finalTenantId;
+export class PostgresJournalEntryRepository {
 
-    // Do not ignore - let DB throw 23505 and handle in UseCase
-    // If you want upsert, return existing
-    try {
-      await client('journal_entries').insert(entryRow);
-    } catch (err) {
-      if (err.code === '23505') throw err; // bubble to UseCase for idempotent replay
-      throw err;
+  async save(
+    aggregate,
+    options = {}
+  ) {
+
+    const client =
+      this.#getClient(options);
+
+    const {
+      entryRow,
+      lineRows,
+    } =
+      JournalEntryMapper.toPersistence(
+        aggregate
+      );
+
+    const tenantId =
+      options.tenantId ??
+      entryRow.tenant_id;
+
+    if (!tenantId) {
+      throw new Error(
+        "tenant_id is required"
+      );
     }
 
-    if (lineRows.length) {
-      const linesWithTenant = lineRows.map(l => ({ ...l, tenant_id: finalTenantId }));
-      await client('journal_lines').insert(linesWithTenant);
+    entryRow.tenant_id = tenantId;
+
+    await client("journal_entries")
+      .insert(entryRow);
+
+    if (lineRows.length === 0) {
+      return;
     }
+
+    const rows =
+      lineRows.map((line) => ({
+        ...line,
+        tenant_id: tenantId,
+      }));
+
+    await client("journal_lines")
+      .insert(rows);
+
   }
 
-  async findByIdempotencyKey(tenantId, idempotencyKey, { transaction, forUpdate = false } = {}) {
-    if (!tenantId || !idempotencyKey) return null;
-    const client = transaction || db;
+  async findByIdempotencyKey(
+    tenantId,
+    idempotencyKey,
+    options = {}
+  ) {
 
-    let query = client('journal_entries').where({ tenant_id: tenantId, idempotency_key: idempotencyKey }).first();
-    if (forUpdate) query = query.forUpdate(); // critical for reversal
+    if (
+      !tenantId ||
+      !idempotencyKey
+    ) {
+      return null;
+    }
 
-    const rawEntry = await query;
-    if (!rawEntry) return null;
+    const client =
+      this.#getClient(options);
 
-    const rawLines = await client('journal_lines')
-      .where({ tenant_id: tenantId, journal_entry_id: rawEntry.id })
-      .orderBy('id', 'asc')
-      .modify(q => { if (forUpdate) q.forUpdate(); });
+    let query =
+      client("journal_entries")
+        .where({
+          tenant_id: tenantId,
+          idempotency_key: idempotencyKey,
+        });
 
-    return JournalEntryMapper.toDomain(rawEntry, rawLines);
+    if (options.forUpdate) {
+      query.forUpdate();
+    }
+
+    const entry =
+      await query.first();
+
+    if (!entry) {
+      return null;
+    }
+
+    let lineQuery =
+      client("journal_lines")
+        .where({
+          tenant_id: tenantId,
+          journal_entry_id: entry.id,
+        })
+        .orderBy("id");
+
+    if (options.forUpdate) {
+      lineQuery.forUpdate();
+    }
+
+    const lines =
+      await lineQuery;
+
+    return JournalEntryMapper.toDomain(
+      entry,
+      lines
+    );
+
   }
 
-  async findByIdForUpdate(tenantId, id, { transaction }) {
-    const client = transaction || db;
-    const rawEntry = await client('journal_entries')
-      .where({ tenant_id: tenantId, id })
-      .forUpdate()
-      .first();
-    if (!rawEntry) return null;
+  async findByIdForUpdate(
+    tenantId,
+    id,
+    options = {}
+  ) {
 
-    const rawLines = await client('journal_lines')
-      .where({ tenant_id: tenantId, journal_entry_id: id })
-      .forUpdate()
-      .orderBy('id', 'asc');
+    const client =
+      this.#getClient(options);
 
-    return JournalEntryMapper.toDomain(rawEntry, rawLines);
+    const entry =
+      await client("journal_entries")
+        .where({
+          tenant_id: tenantId,
+          id,
+        })
+        .forUpdate()
+        .first();
+
+    if (!entry) {
+      return null;
+    }
+
+    const lines =
+      await client("journal_lines")
+        .where({
+          tenant_id: tenantId,
+          journal_entry_id: id,
+        })
+        .forUpdate()
+        .orderBy("id");
+
+    return JournalEntryMapper.toDomain(
+      entry,
+      lines
+    );
+
   }
 
-  async updateStatus(tenantId, id, status, metadataPatch, { transaction }) {
-    const client = transaction || db;
-    await client('journal_entries')
-      .where({ tenant_id: tenantId, id })
-      .update({ 
-        status, 
-        metadata: client.raw(`metadata || ?::jsonb`, [JSON.stringify(metadataPatch)]),
-        updated_at: new Date() 
+  async updateStatus(
+    tenantId,
+    id,
+    status,
+    metadataPatch = {},
+    options = {}
+  ) {
+
+    const client =
+      this.#getClient(options);
+
+    await client("journal_entries")
+      .where({
+        tenant_id: tenantId,
+        id,
+      })
+      .update({
+
+        status,
+
+        metadata:
+          client.raw(
+            "metadata || ?::jsonb",
+            [
+              JSON.stringify(
+                metadataPatch
+              ),
+            ]
+          ),
+
+        updated_at:
+          new Date(),
+
       });
+
   }
+
+  #getClient(options) {
+
+    return (
+      options.transaction ??
+      options.session ??
+      db
+    );
+
+  }
+
 }

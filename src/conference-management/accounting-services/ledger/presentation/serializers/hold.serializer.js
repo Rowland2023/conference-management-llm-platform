@@ -1,6 +1,10 @@
+/**
+ * Serializes Hold aggregate/read model into HTTP response JSON.
+ */
 class HoldSerializer {
   static fromAggregate(hold) {
     if (!hold) return null;
+
     return {
       id: hold.id,
       accountId: hold.accountId,
@@ -15,6 +19,8 @@ class HoldSerializer {
   }
 
   static fromReadModel(row) {
+    if (!row) return null;
+
     return {
       id: row.id,
       accountId: row.account_id,
@@ -29,10 +35,16 @@ class HoldSerializer {
   }
 
   static serialize(hold) {
-    return hold.getAmount ? this.fromAggregate(hold) : this.fromReadModel(hold);
+    return hold.getAmount
+      ? this.fromAggregate(hold)
+      : this.fromReadModel(hold);
   }
 
-  static serializeMany(holds) {
-    return holds.map(h => this.serialize(h)).filter(Boolean);
+  static serializeMany(holds = []) {
+    return holds
+      .map((hold) => this.serialize(hold))
+      .filter(Boolean);
   }
 }
+
+export default HoldSerializer;

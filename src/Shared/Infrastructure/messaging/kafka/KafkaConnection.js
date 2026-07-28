@@ -2,7 +2,8 @@
  * @file src/Shared/infrastructure/messaging/KafkaConnection.js
  * @description Centralized Kafka client manager and connection lifecycle handler.
  */
-const { Kafka, logLevel } = require('kafkajs');
+
+import { Kafka, logLevel } from "kafkajs";
 
 class KafkaConnection {
   /**
@@ -13,22 +14,33 @@ class KafkaConnection {
    * @param {Object} [params.sasl] - Optional SASL authentication credentials
    * @param {Object} [params.logger] - Application Logger instance
    */
-  constructor({ brokers, clientId = 'ledger-service', ssl, sasl, logger }) {
+  constructor({
+    brokers,
+    clientId = "ledger-service",
+    ssl,
+    sasl,
+    logger,
+  }) {
     if (!brokers || (Array.isArray(brokers) && brokers.length === 0)) {
-      throw new Error('KafkaConnection requires at least one broker address.');
+      throw new Error(
+        "KafkaConnection requires at least one broker address."
+      );
     }
 
     this.logger = logger;
     this.clientId = clientId;
 
-    const brokerList = typeof brokers === 'string'
-      ? brokers.split(',').map((b) => b.trim())
+    const brokerList = typeof brokers === "string"
+      ? brokers.split(",").map((b) => b.trim())
       : brokers;
 
-    // Bridge KafkaJS internal logging to application logger
+    /**
+     * Bridge KafkaJS internal logging into application logger.
+     */
     const customLogCreator = () => {
       return ({ level, log }) => {
         if (!this.logger) return;
+
         const { message, ...extra } = log;
 
         switch (level) {
@@ -36,15 +48,19 @@ class KafkaConnection {
           case logLevel.NOTHING:
             this.logger.error(`[KafkaJS] ${message}`, extra);
             break;
+
           case logLevel.WARN:
             this.logger.warn(`[KafkaJS] ${message}`, extra);
             break;
+
           case logLevel.INFO:
             this.logger.info(`[KafkaJS] ${message}`, extra);
             break;
+
           case logLevel.DEBUG:
             this.logger.debug(`[KafkaJS] ${message}`, extra);
             break;
+
           default:
             this.logger.info(`[KafkaJS] ${message}`, extra);
         }
@@ -58,6 +74,7 @@ class KafkaConnection {
       sasl,
       logLevel: logLevel.WARN,
       logCreator: customLogCreator,
+
       retry: {
         initialRetryTime: 300,
         retries: 8,
@@ -69,68 +86,86 @@ class KafkaConnection {
   }
 
   /**
-   * Returns the underlying KafkaJS instance.
-   * @returns {import('kafkajs').Kafka}
+   * Returns underlying KafkaJS instance.
+   *
+   * @returns {import("kafkajs").Kafka}
    */
   getKafkaInstance() {
     return this.kafka;
   }
 
   /**
-   * Lazy-initializes and connects the persistent Admin client.
+   * Lazy initializes Kafka Admin client.
+   *
    * @private
    */
   async _getAdmin() {
     if (!this.admin) {
       this.admin = this.kafka.admin();
     }
+
     if (!this.isAdminConnected) {
       await this.admin.connect();
       this.isAdminConnected = true;
     }
+
     return this.admin;
   }
 
   /**
-   * Checks connection health against the Kafka broker cluster.
-   * Uses persistent connection with proper try/finally safeguards.
-   * 
+   * Checks Kafka cluster health.
+   *
    * @returns {Promise<boolean>}
    */
   async checkHealth() {
     try {
       const admin = await this._getAdmin();
-      // Fast cluster metadata fetch to verify broker connectivity
-      await admin.fetchTopicMetadata({ topics: [] });
+
+      // Lightweight broker connectivity check
+      await admin.fetchTopicMetadata({
+        topics: [],
+      });
+
       return true;
+
     } catch (error) {
       this.isAdminConnected = false;
-      if (this.logger) {
-        this.logger.error('Kafka cluster healthcheck failed', {
+
+      this.logger?.error(
+        "Kafka cluster healthcheck failed",
+        {
           error: error.message,
           stack: error.stack,
-        });
-      }
+        }
+      );
+
       return false;
     }
   }
 
   /**
-   * Cleanly disconnects the internal admin connection on process teardown.
+   * Disconnect Kafka admin client during shutdown.
    */
   async disconnect() {
-    if (this.admin && this.isAdminConnected) {
-      try {
-        await this.admin.disconnect();
-      } catch (err) {
-        if (this.logger) {
-          this.logger.error('Error disconnecting Kafka Admin instance', { error: err.message });
+    if (!this.admin || !this.isAdminConnected) {
+      return;
+    }
+
+    try {
+      await this.admin.disconnect();
+
+    } catch (error) {
+      this.logger?.error(
+        "Error disconnecting Kafka Admin instance",
+        {
+          error: error.message,
         }
-      } finally {
-        this.isAdminConnected = false;
-      }
+      );
+
+    } finally {
+      this.isAdminConnected = false;
     }
   }
 }
 
-module.exports = KafkaConnection;
+export { KafkaConnection };

@@ -3,7 +3,7 @@
  * @description Knex.js concrete implementation of the UnitOfWork application contract.
  */
 
-const UnitOfWork = require('../../shared/application/persistence/UnitOfWork');
+import { UnitOfWork } from "../../shared/application/persistence/UnitOfWork.js";
 
 class KnexUnitOfWork extends UnitOfWork {
   /**
@@ -15,19 +15,25 @@ class KnexUnitOfWork extends UnitOfWork {
     super();
 
     if (!knex) {
-      throw new Error('[KnexUnitOfWork] Knex instance is required.');
+      throw new Error(
+        "[KnexUnitOfWork] Knex instance is required."
+      );
     }
 
     this.knex = knex;
+
     this.options = {
       timeout: 10000, // 10s default transaction safety timeout
       ...options,
     };
+
     this.trackedAggregates = new Set();
   }
 
+
   /**
-   * Registers an aggregate root for domain event collection (no-op for raw Knex UoW).
+   * Registers an aggregate root for domain event collection.
+   *
    * @param {Object} aggregate
    */
   track(aggregate) {
@@ -36,12 +42,14 @@ class KnexUnitOfWork extends UnitOfWork {
     }
   }
 
+
   /**
    * Clears tracked aggregates.
    */
   clear() {
     this.trackedAggregates.clear();
   }
+
 
   /**
    * Executes work inside a Knex transaction scope.
@@ -50,18 +58,24 @@ class KnexUnitOfWork extends UnitOfWork {
    * @returns {Promise<any>}
    */
   async execute(work) {
-    if (typeof work !== 'function') {
-      throw new Error('[KnexUnitOfWork] Work parameter must be an executable function.');
+    if (typeof work !== "function") {
+      throw new Error(
+        "[KnexUnitOfWork] Work parameter must be an executable function."
+      );
     }
 
     try {
-      return await this.knex.transaction(async (trx) => {
-        return await work(trx);
-      }, this.options);
+      return await this.knex.transaction(
+        async (trx) => {
+          return await work(trx);
+        },
+        this.options
+      );
+
     } finally {
       this.clear();
     }
   }
 }
 
-module.exports = KnexUnitOfWork;
+export default KnexUnitOfWork;
