@@ -1,12 +1,17 @@
 /**
  * @file src/presentation/controllers/journal.controller.js
- * 
+ *
  * Journal Entry HTTP Controller for posting, reversing, and querying ledger entries.
  */
-const JournalSerializer = require('../serializers/journal.serializer');
 
-class JournalController {
-  constructor({ postJournalEntryUseCase, reverseJournalEntryUseCase, getJournalEntryUseCase }) {
+import JournalSerializer from "../serializers/journal.serializer.js";
+
+export default class JournalController {
+  constructor({
+    postJournalEntryUseCase,
+    reverseJournalEntryUseCase,
+    getJournalEntryUseCase,
+  }) {
     this.postJournalEntryUseCase = postJournalEntryUseCase;
     this.reverseJournalEntryUseCase = reverseJournalEntryUseCase;
     this.getJournalEntryUseCase = getJournalEntryUseCase;
@@ -18,19 +23,23 @@ class JournalController {
   postEntry = async (req, res, next) => {
     try {
       // Support Idempotency-Key header with fallback to body property
-      const idempotencyKey = req.headers['idempotency-key'] || req.body.idempotencyKey;
+      const idempotencyKey =
+        req.headers["idempotency-key"] ||
+        req.body.idempotencyKey;
 
-      const entry = await this.postJournalEntryUseCase.execute({
-        ...req.body,
-        idempotencyKey,
-        tenantId: req.actor.tenantId,
-        actor: req.actor,
-      });
+      const entry =
+        await this.postJournalEntryUseCase.execute({
+          ...req.body,
+          idempotencyKey,
+          tenantId: req.actor.tenantId,
+          actor: req.actor,
+        });
 
       return res.status(201).json({
         success: true,
         data: JournalSerializer.serialize(entry),
       });
+
     } catch (err) {
       next(err);
     }
@@ -41,20 +50,24 @@ class JournalController {
    */
   reverseEntry = async (req, res, next) => {
     try {
-      const idempotencyKey = req.headers['idempotency-key'] || req.body.idempotencyKey;
+      const idempotencyKey =
+        req.headers["idempotency-key"] ||
+        req.body.idempotencyKey;
 
-      const entry = await this.reverseJournalEntryUseCase.execute({
-        id: req.params.id,
-        tenantId: req.actor.tenantId, // Scoped to tenant
-        idempotencyKey,
-        reason: req.body.reason,
-        actor: req.actor,
-      });
+      const entry =
+        await this.reverseJournalEntryUseCase.execute({
+          id: req.params.id,
+          tenantId: req.actor.tenantId,
+          idempotencyKey,
+          reason: req.body.reason,
+          actor: req.actor,
+        });
 
       return res.status(200).json({
         success: true,
         data: JournalSerializer.serialize(entry),
       });
+
     } catch (err) {
       next(err);
     }
@@ -65,19 +78,19 @@ class JournalController {
    */
   getEntry = async (req, res, next) => {
     try {
-      const entry = await this.getJournalEntryUseCase.execute({
-        id: req.params.id,
-        tenantId: req.actor.tenantId, // Prevent cross-tenant entry lookup
-      });
+      const entry =
+        await this.getJournalEntryUseCase.execute({
+          id: req.params.id,
+          tenantId: req.actor.tenantId,
+        });
 
       return res.status(200).json({
         success: true,
         data: JournalSerializer.serialize(entry),
       });
+
     } catch (err) {
       next(err);
     }
   };
 }
-
-module.exports = JournalController;

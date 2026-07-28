@@ -1,31 +1,42 @@
 /**
  * @file create-hold.usecase.js
+ *
+ * Creates a funds hold on an account.
  */
+
 import {
   InvalidArgumentError,
-  NotFoundError,
+  EntityNotFoundError,
   InsufficientFundsError,
 } from "../domain/error/index.js";
 
-const toBigIntSafe = (v) => {
-  if (typeof v === 'bigint') return v;
-  if (v === null || v === undefined || v === '') return 0n;
-  const str = String(v).trim().split('.')[0];
-  if (!str || Number.isNaN(Number(str))) return 0n;
-  return BigInt(str);
+const toBigIntSafe = (value) => {
+  if (typeof value === "bigint") {
+    return value;
+  }
+
+  if (value === null || value === undefined || value === "") {
+    return 0n;
+  }
+
+  const normalized = String(value).trim().split(".")[0];
+
+  if (!normalized || Number.isNaN(Number(normalized))) {
+    return 0n;
+  }
+
+  return BigInt(normalized);
 };
 
 export class CreateHoldUseCase {
-  /**
-   * @param {Object} dependencies
-   * @param {Object} dependencies.holdRepository
-   * @param {Object} dependencies.accountRepository
-   * @param {Object} dependencies.journalEntryRepository
-   * @param {Object} dependencies.unitOfWork
-   * @param {Object} [dependencies.logger]
-   * @param {Object} [dependencies.metrics]
-   */
-  constructor({ holdRepository, accountRepository, journalEntryRepository, unitOfWork, logger, metrics }) {
+  constructor({
+    holdRepository,
+    accountRepository,
+    journalEntryRepository,
+    unitOfWork,
+    logger,
+    metrics,
+  }) {
     this.holdRepository = holdRepository;
     this.accountRepository = accountRepository;
     this.journalEntryRepository = journalEntryRepository;
@@ -34,104 +45,272 @@ export class CreateHoldUseCase {
     this.metrics = metrics;
   }
 
-  /**
-   * @param {Object} dto
-   * @param {string} dto.idempotencyKey
-   * @param {string} dto.accountId
-   * @param {string|number} dto.amount Amount to reserve (minor units)
-   * @param {string} dto.currency
-   * @param {string} dto.description
-   * @param {Date} [dto.expiresAt] Optional expiration for the hold
-   * @param {Object|string} [dto.requestedBy]
-   */
-  async execute({ idempotencyKey, accountId, amount, currency, description, expiresAt, requestedBy }) {
-    // 1. Validate Input
-    if (!idempotencyKey) throw new InvalidArgumentError('idempotencyKey is required');
-    if (!accountId) throw new InvalidArgumentError('accountId is required');
-    
-    const amountBigInt = toBigIntSafe(amount);
-    if (amountBigInt <= 0n) {
-      throw new InvalidArgumentError('Hold amount must be greater than zero');
+  async execute({
+    idempotencyKey,
+    accountId,
+    amount,
+    currency,
+    description,
+    expiresAt,
+    requestedBy,
+  }) {
+    const amountInMinorUnits = this.validateInput({
+      idempotencyKey,
+      accountId,
+      amount,
+      expiresAt,
+    });
+
+    const duplicate =
+      await this.findDuplicate(idempotencyKey);
+
+    if (duplicate) {
+      return duplicate;
     }
 
-    const expiryDate = expiresAt ? new Date(expiresAt) : null;
-    if (expiryDate && Number.isNaN(expiryDate.getTime())) {
-      throw new InvalidArgumentError('expiresAt must be a valid ISO-8601 Date');
+    const hold =
+      await this.unitOfWork.execute(async (session) => {
+
+        const account =
+          await this.loadAccount(
+            accountId,
+            session
+          );
+
+        const targetCurrency =
+          this.resolveCurrency(
+            account,
+            currency
+          );
+
+        await this.ensureSufficientFunds({
+          account,
+          currency: targetCurrency,
+          amount: amountInMinorUnits,
+          session,
+        });
+
+        return this.holdRepository.create(
+          {
+            idempotencyKey,
+            accountId: account.id,
+            amount: amountInMinorUnits.toString(),
+            currency: targetCurrency,
+            description,
+            status: "ACTIVE",
+            expiresAt:
+              expiresAt
+                ? new Date(expiresAt)
+                : null,
+            createdAt: new Date(),
+          },
+          { session }
+        );
+      });
+
+    this.recordMetrics({
+      hold,
+      accountId,
+      amount: amountInMinorUnits,
+      requestedBy,
+    });
+
+    return {
+      ...hold,
+      isDuplicate: false,
+    };
+  }
+
+  validateInput({
+    idempotencyKey,
+    accountId,
+    amount,
+    expiresAt,
+  }) {
+    if (!idempotencyKey) {
+      throw new InvalidArgumentError(
+        "idempotencyKey is required"
+      );
     }
-    if (expiryDate && expiryDate.getTime() <= Date.now()) {
-      throw new InvalidArgumentError('expiresAt must be a date in the future');
+
+    if (!accountId) {
+      throw new InvalidArgumentError(
+        "accountId is required"
+      );
     }
 
-    // 2. Idempotency Check
-    const existingHold = await this.holdRepository.findByIdempotencyKey(idempotencyKey);
-    if (existingHold) {
-      this.logger?.info({ event: 'HOLD_DUPLICATE_IGNORED', idempotencyKey });
-      return { ...existingHold, isDuplicate: true };
+    const amountValue =
+      toBigIntSafe(amount);
+
+    if (amountValue <= 0n) {
+      throw new InvalidArgumentError(
+        "Hold amount must be greater than zero"
+      );
     }
 
-    // 3. Execute inside atomic transaction
-    const holdResult = await this.unitOfWork.execute(async (session) => {
-      // Step A: Lock the account to prevent concurrent balance modifications
-      const [account] = await this.accountRepository.findAndLockByIds([accountId], { session });
-      if (!account) {
-        throw new NotFoundError(`Account ${accountId} not found`);
-      }
-      if (account.status && account.status !== 'ACTIVE') {
-        throw new InvalidArgumentError(`Account is inactive (${account.status})`);
-      }
+    if (expiresAt) {
+      const expiry =
+        new Date(expiresAt);
 
-      const targetCurrency = (currency || account.currency)?.toUpperCase();
-      if (account.currency && targetCurrency !== account.currency.toUpperCase()) {
-        throw new InvalidArgumentError(`Currency mismatch. Account operates in ${account.currency}`);
-      }
-
-      // Step B: Calculate Available Balance strictly inside the transaction lock
-      const balanceDetails = await this.journalEntryRepository.calculateAccountBalance({
-        accountId: account.id,
-        currency: targetCurrency,
-      }, { session });
-
-      const posted = toBigIntSafe(balanceDetails.postedBalance);
-      const pending = toBigIntSafe(balanceDetails.pendingBalance); // Includes existing active holds
-      const availableBalance = posted - pending;
-
-      // Step C: Authorize (Check if funds are sufficient)
-      // Note: If this is a credit account (liability), logic might differ. Assuming standard deposit/asset logic here.
-      if (availableBalance < amountBigInt) {
-        throw new InsufficientFundsError(
-          `Insufficient funds. Available: ${availableBalance.toString()}, Requested Hold: ${amountBigInt.toString()}`
+      if (
+        Number.isNaN(
+          expiry.getTime()
+        )
+      ) {
+        throw new InvalidArgumentError(
+          "expiresAt must be a valid ISO-8601 date"
         );
       }
 
-      // Step D: Create the Hold Record
-      const createdHold = await this.holdRepository.create({
-        idempotencyKey,
-        accountId: account.id,
-        amount: amountBigInt.toString(),
-        currency: targetCurrency,
-        description,
-        status: 'ACTIVE',
-        expiresAt: expiryDate,
-        createdAt: new Date(),
-      }, { session });
+      if (
+        expiry.getTime() <= Date.now()
+      ) {
+        throw new InvalidArgumentError(
+          "expiresAt must be in the future"
+        );
+      }
+    }
 
-      return createdHold;
-    });
+    return amountValue;
+  }
 
-    // 4. Observability
-    const actorId = typeof requestedBy === 'object' ? requestedBy?.id : requestedBy;
+  async findDuplicate(idempotencyKey) {
+    const hold =
+      await this.holdRepository
+        .findByIdempotencyKey(
+          idempotencyKey
+        );
+
+    if (!hold) {
+      return null;
+    }
+
     this.logger?.info({
-      event: 'FUNDS_HELD',
-      holdId: holdResult.id,
-      accountId,
-      amount: amountBigInt.toString(),
-      currency: holdResult.currency,
-      requestedBy: actorId || 'SYSTEM',
+      event: "HOLD_DUPLICATE_IGNORED",
+      idempotencyKey,
     });
-    this.metrics?.increment('ledger.hold.created', 1, { currency: holdResult.currency });
 
-    return { ...holdResult, isDuplicate: false };
+    return {
+      ...hold,
+      isDuplicate: true,
+    };
+  }
+
+  async loadAccount(
+    accountId,
+    session
+  ) {
+    const [account] =
+      await this.accountRepository
+        .findAndLockByIds(
+          [accountId],
+          { session }
+        );
+
+    if (!account) {
+      throw new EntityNotFoundError(
+        `Account ${accountId} not found`
+      );
+    }
+
+    if (
+      account.status &&
+      account.status !== "ACTIVE"
+    ) {
+      throw new InvalidArgumentError(
+        `Account is ${account.status}`
+      );
+    }
+
+    return account;
+  }
+
+  resolveCurrency(
+    account,
+    requestedCurrency
+  ) {
+    const currency =
+      (
+        requestedCurrency ??
+        account.currency
+      )?.toUpperCase();
+
+    if (
+      account.currency &&
+      currency !==
+        account.currency.toUpperCase()
+    ) {
+      throw new InvalidArgumentError(
+        `Currency mismatch. Account uses ${account.currency}`
+      );
+    }
+
+    return currency;
+  }
+
+  async ensureSufficientFunds({
+    account,
+    currency,
+    amount,
+    session,
+  }) {
+    const balances =
+      await this.journalEntryRepository
+        .calculateAccountBalance(
+          {
+            accountId: account.id,
+            currency,
+          },
+          { session }
+        );
+
+    const posted =
+      toBigIntSafe(
+        balances.postedBalance
+      );
+
+    const pending =
+      toBigIntSafe(
+        balances.pendingBalance
+      );
+
+    const available =
+      posted - pending;
+
+    if (available < amount) {
+      throw new InsufficientFundsError(
+        `Available ${available} < Requested ${amount}`
+      );
+    }
+  }
+
+  recordMetrics({
+    hold,
+    accountId,
+    amount,
+    requestedBy,
+  }) {
+    const actor =
+      typeof requestedBy === "object"
+        ? requestedBy?.id ??
+          requestedBy?.userId
+        : requestedBy;
+
+    this.logger?.info({
+      event: "FUNDS_HELD",
+      holdId: hold.id,
+      accountId,
+      amount: amount.toString(),
+      currency: hold.currency,
+      requestedBy: actor ?? "SYSTEM",
+    });
+
+    this.metrics?.increment(
+      "ledger.hold.created",
+      1,
+      {
+        currency: hold.currency,
+      }
+    );
   }
 }
-
-module.exports = CreateHoldUseCase;

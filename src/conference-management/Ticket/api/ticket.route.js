@@ -1,6 +1,6 @@
 // src/modules/ticket/api/ticket.route.js
 import { Router } from 'express';
-import { idempotencyMiddleware } from "../../../shared/infrastructure/middleware/idempotency.js";
+import { idempotency } from "../../../shared/infrastructure/middleware/idempotency.js";
 import { correlationIdMiddleware } from "../../../shared/infrastructure/middleware/correlationId.js";
 
 /**
@@ -20,22 +20,22 @@ export function createTicketRouter(ticketController) {
 
   // Commands - mutating operations
   router.post('/', 
-    idempotencyMiddleware,
+    idempotency,
     (req, res, next) => ticketController.createTicket(req, res, next)
   );
   
   router.post('/:id/reserve',
-    idempotencyMiddleware,
+    idempotency,
     (req, res, next) => ticketController.reserveTicket(req, res, next)
   );
   
   router.post('/:id/release',
-    idempotencyMiddleware,
+    idempotency,
     (req, res, next) => ticketController.releaseTicket(req, res, next)
   );
   
   router.post('/:id/cancel',
-    idempotencyMiddleware,
+    idempotency,
     (req, res, next) => ticketController.cancelTicket(req, res, next)
   );
 

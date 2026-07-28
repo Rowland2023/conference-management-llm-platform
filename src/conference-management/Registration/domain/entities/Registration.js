@@ -1,73 +1,129 @@
-import { DomainEvent } from "../../../../shared/domain/DomainEvent.js";
+import { AggregateRoot } from "../../../../shared/domain/AggregateRoot.js";
 import { DomainInvariantError } from "../../../../shared/domain/error/DomainErrors.js";
 
-const CANCELLATION_REASONS = new Set([
-  'user_request',
-  'payment_failed', 
-  'admin_action',
-  'conference_cancelled',
-  'fraud_suspected'
+const VALID_STATUSES = new Set([
+  "PENDING",
+  "CONFIRMED",
+  "CANCELLED",
+  "CHECKED_IN",
 ]);
 
-export class RegistrationCancelledEvent extends DomainEvent {
+export class Registration extends AggregateRoot {
   constructor({
-    registrationId,
+    id,
     conferenceId,
     userId,
-    reason, // required, must be enum
-    occurredAt, // required, no default
-    correlationId = null,
-    causationId = null
+    ticketTier,
+    status = "PENDING",
+    attendeeNotes = null,
+    paymentId = null,
+    version = 0,
+    createdAt = new Date(),
+    updatedAt = new Date(),
+    deletedAt = null,
   }) {
-    if (!registrationId) throw new DomainInvariantError("RegistrationCancelledEvent: registrationId required.");
-    if (!conferenceId) throw new DomainInvariantError("RegistrationCancelledEvent: conferenceId required.");
-    if (!userId) throw new DomainInvariantError("RegistrationCancelledEvent: userId required.");
-    if (!reason) throw new DomainInvariantError("RegistrationCancelledEvent: reason required.");
-    if (!CANCELLATION_REASONS.has(reason)) {
-      throw new DomainInvariantError(`RegistrationCancelledEvent: invalid reason '${reason}'`);
-    }
-    if (!occurredAt) throw new DomainInvariantError("RegistrationCancelledEvent: occurredAt required.");
+    super(id);
 
-    const parsedOccurred = new Date(occurredAt);
-    if (Number.isNaN(parsedOccurred.getTime())) {
-      throw new DomainInvariantError("RegistrationCancelledEvent: invalid occurredAt");
+    if (!conferenceId) {
+      throw new DomainInvariantError("conferenceId is required.");
     }
 
-    super({
-      eventName: "registration.cancelled",
-      eventVersion: 1,
-      aggregateId: registrationId,
-      occurredAt: parsedOccurred,
-      correlationId,
-      causationId
-    });
+    if (!userId) {
+      throw new DomainInvariantError("userId is required.");
+    }
 
-    this.payload = Object.freeze({
-      registrationId,
-      conferenceId,
-      userId,
-      reason // no normalization - record what aggregate sent
-    });
+    if (!ticketTier) {
+      throw new DomainInvariantError("ticketTier is required.");
+    }
 
-    this.freezeEvent();
+    if (!VALID_STATUSES.has(status)) {
+      throw new DomainInvariantError(
+        `Invalid registration status '${status}'.`
+      );
+    }
+
+    this.id = id;
+    this.conferenceId = conferenceId;
+    this.userId = userId;
+    this.ticketTier = ticketTier;
+    this.status = status;
+    this.attendeeNotes = attendeeNotes;
+    this.paymentId = paymentId;
+
+    this.version = version;
+
+    this.createdAt = new Date(createdAt);
+    this.updatedAt = new Date(updatedAt);
+    this.deletedAt = deletedAt ? new Date(deletedAt) : null;
   }
 
-  static fromJSON(json) {
-    if (!json?.payload) {
-      throw new DomainInvariantError("RegistrationCancelledEvent: Cannot rehydrate from empty payload.");
-    }
-    if (json.aggregateId !== json.payload.registrationId) {
-      throw new DomainInvariantError("RegistrationCancelledEvent: aggregateId mismatch in persisted data.");
+  confirm(paymentId) {
+    if (this.status !== "PENDING") {
+      throw new DomainInvariantError(
+        "Only pending registrations can be confirmed."
+      );
     }
 
-    return new RegistrationCancelledEvent({
-      registrationId: json.payload.registrationId,
-      conferenceId: json.payload.conferenceId,
-      userId: json.payload.userId,
-      reason: json.payload.reason,
-      occurredAt: json.metadata.occurredAt,
-      correlationId: json.metadata.correlationId,
-      causationId: json.metadata.causationId
-    });
+    this.status = "CONFIRMED";
+    this.paymentId = paymentId;
+    this.updatedAt = new Date();
+  }
+
+  cancel() {
+    if (this.status === "CANCELLED") {
+      throw new DomainInvariantError(
+        "Registration already cancelled."
+      );
+    }
+
+    if (this.status === "CHECKED_IN") {
+      throw new DomainInvariantError(
+        "Checked-in registrations cannot be cancelled."
+      );
+    }
+
+    this.status = "CANCELLED";
+    this.updatedAt = new Date();
+  }
+
+  checkIn() {
+    if (this.status !== "CONFIRMED") {
+      throw new DomainInvariantError(
+        "Only confirmed registrations may check in."
+      );
+    }
+
+    this.status = "CHECKED_IN";
+    this.updatedAt = new Date();
+  }
+
+  updateNotes(notes) {
+    this.attendeeNotes = notes;
+    this.updatedAt = new Date();
+  }
+
+  markDeleted() {
+    this.deletedAt = new Date();
+    this.updatedAt = new Date();
+  }
+
+  isDeleted() {
+    return this.deletedAt !== null;
+  }
+
+  toJSON() {
+    return {
+      id: this.id,
+      conferenceId: this.conferenceId,
+      userId: this.userId,
+      ticketTier: this.ticketTier,
+      status: this.status,
+      attendeeNotes: this.attendeeNotes,
+      paymentId: this.paymentId,
+      version: this.version,
+      createdAt: this.createdAt,
+      updatedAt: this.updatedAt,
+      deletedAt: this.deletedAt,
+    };
   }
 }

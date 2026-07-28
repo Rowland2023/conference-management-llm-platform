@@ -4,7 +4,10 @@ class BaseSerializer {
   static toIso(value) {
     if (!value) return null;
 
-    const date = value instanceof Date ? value : new Date(value);
+    const date =
+      value instanceof Date
+        ? value
+        : new Date(value);
 
     return Number.isNaN(date.getTime())
       ? null
@@ -12,10 +15,13 @@ class BaseSerializer {
   }
 
   static toMoneyString(value) {
-    if (value == null) return '0';
+    if (value == null) return "0";
 
     // Money VO
-    if (typeof value === 'object' && 'amount' in value) {
+    if (
+      typeof value === "object" &&
+      "amount" in value
+    ) {
       return value.amount.toString();
     }
 
@@ -24,9 +30,14 @@ class BaseSerializer {
   }
 
   static serializeMany(items = [], serializer) {
-    if (!Array.isArray(items)) return [];
-    return items.map(serializer).filter(Boolean);
+    if (!Array.isArray(items)) {
+      return [];
+    }
+
+    return items
+      .map(serializer)
+      .filter(Boolean);
   }
 }
 
-module.exports = BaseSerializer;
+export default BaseSerializer;
