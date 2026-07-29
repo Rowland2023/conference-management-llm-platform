@@ -1,6 +1,6 @@
 /**
  * @file domain/RefundStatus.js
- * @description Value Object and State Machine governing valid refund state transitions.
+ * @description Value Object representing the lifecycle of a refund.
  */
 
 const STATES = Object.freeze({
@@ -12,7 +12,6 @@ const STATES = Object.freeze({
   REJECTED: "REJECTED",
 });
 
-// Explicit State Transition Map
 const VALID_TRANSITIONS = Object.freeze({
   [STATES.REQUESTED]: [
     STATES.PENDING_APPROVAL,
@@ -41,123 +40,145 @@ const VALID_TRANSITIONS = Object.freeze({
   [STATES.REJECTED]: [],
 });
 
+export class RefundStatus {
 
-class RefundStatus {
+  constructor(value) {
 
-  constructor(status) {
+    if (!Object.values(STATES).includes(value)) {
 
-    if (!Object.values(STATES).includes(status)) {
       throw new Error(
-        `[RefundStatus] Invalid refund status: "${status}"`
+        `[RefundStatus] Invalid refund status "${value}".`
       );
+
     }
 
-    this.value = status;
+    this.value = value;
 
     Object.freeze(this);
+
   }
 
-
-  // Enum Expository Constants
+  /**
+   * Factory methods
+   */
 
   static get REQUESTED() {
-    return STATES.REQUESTED;
+    return new RefundStatus(STATES.REQUESTED);
   }
 
   static get PENDING_APPROVAL() {
-    return STATES.PENDING_APPROVAL;
+    return new RefundStatus(STATES.PENDING_APPROVAL);
   }
 
   static get PROCESSING() {
-    return STATES.PROCESSING;
+    return new RefundStatus(STATES.PROCESSING);
   }
 
   static get COMPLETED() {
-    return STATES.COMPLETED;
+    return new RefundStatus(STATES.COMPLETED);
   }
 
   static get FAILED() {
-    return STATES.FAILED;
+    return new RefundStatus(STATES.FAILED);
   }
 
   static get REJECTED() {
-    return STATES.REJECTED;
+    return new RefundStatus(STATES.REJECTED);
   }
 
+  /**
+   * Construct from persisted value.
+   */
+
+  static from(value) {
+    return new RefundStatus(value);
+  }
 
   /**
-   * Asserts whether transitioning to a target state is valid.
-   *
-   * @param {string} nextStatus
-   * @returns {boolean}
+   * Returns every valid state.
    */
+
+  static values() {
+    return Object.values(STATES);
+  }
+
+  /**
+   * Determines whether this status can transition.
+   */
+
   canTransitionTo(nextStatus) {
 
-    const allowed =
-      VALID_TRANSITIONS[this.value] || [];
+    const target =
+      nextStatus instanceof RefundStatus
+        ? nextStatus.value
+        : nextStatus;
 
-    return allowed.includes(nextStatus);
+    const allowed =
+      VALID_TRANSITIONS[this.value] ?? [];
+
+    return allowed.includes(target);
+
   }
 
-
   /**
-   * Enforces transition rules and returns a new status instance.
-   *
-   * @param {string} nextStatus
-   * @returns {RefundStatus}
+   * Returns a new status after validation.
    */
+
   transitionTo(nextStatus) {
 
-    if (!this.canTransitionTo(nextStatus)) {
+    const target =
+      nextStatus instanceof RefundStatus
+        ? nextStatus.value
+        : nextStatus;
+
+    if (!this.canTransitionTo(target)) {
+
       throw new Error(
-        `[RefundStatus] Invalid transition from "${this.value}" to "${nextStatus}".`
+        `[RefundStatus] Invalid transition from "${this.value}" to "${target}".`
       );
+
     }
 
-    return new RefundStatus(nextStatus);
+    return new RefundStatus(target);
+
   }
 
-
   /**
-   * Checks if the current state is final/immutable.
-   *
-   * @returns {boolean}
+   * Whether the refund can no longer change state.
    */
+
   isTerminal() {
 
     return [
-      STATES.COMPLETED,
-      STATES.REJECTED,
-    ].includes(this.value);
-  }
 
+      STATES.COMPLETED,
+
+      STATES.REJECTED,
+
+    ].includes(this.value);
+
+  }
 
   equals(other) {
 
-    if (other instanceof RefundStatus) {
-      return this.value === other.value;
+    if (!(other instanceof RefundStatus)) {
+
+      return false;
+
     }
 
-    return this.value === other;
+    return this.value === other.value;
+
   }
 
-
   toString() {
+    return this.value;
+  }
 
+  toJSON() {
     return this.value;
   }
 
 }
-
-
-// Preserve enum-style compatibility
-// Usage:
-// RefundStatus.REQUESTED
-// RefundStatus.PROCESSING
-Object.assign(
-  RefundStatus,
-  STATES
-);
-
 
 export default RefundStatus;

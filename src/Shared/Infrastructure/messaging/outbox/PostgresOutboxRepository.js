@@ -1,166 +1,94 @@
-// src/shared/infrastructure/outbox/PostgresOutboxRepository.js
+// src/shared/infrastructure/messaging/outbox/PostgresOutboxRepository.js
 
-/**
- * PostgreSQL implementation of the Transactional Outbox.
- *
- * Responsibilities:
- * - Persist Domain Events atomically with Aggregate changes.
- * - Fetch unpublished events.
- * - Lock rows for concurrent workers.
- * - Mark events as dispatched.
- * - Increment retry count on failures.
- */
 export class PostgresOutboxRepository {
-  constructor({ sequelize }) {
-    if (!sequelize) {
+  constructor({ knex }) {
+    if (!knex) {
       throw new Error(
-        "PostgresOutboxRepository requires a Sequelize instance."
+        "PostgresOutboxRepository requires a Knex instance."
       );
     }
 
-    this.sequelize = sequelize;
+    this.knex = knex;
   }
 
   /**
-   * Persist one or more Domain Events.
-   *
-   * Must be called using the SAME transaction that
-   * persists the Aggregate.
-   *
-   * @param {DomainEvent[]} events
-   * @param {Transaction} trx
+   * Save events inside an existing transaction.
    */
   async save(events, trx) {
-    if (!Array.isArray(events)) {
-      events = [events];
-    }
+    const db = trx || this.knex;
 
-    if (!trx) {
-      throw new Error(
-        "Outbox save requires an active database transaction."
-      );
-    }
+    const list = Array.isArray(events)
+      ? events
+      : [events];
 
-    for (const event of events) {
-      const metadata = event.metadata;
+    const rows = list.map(event => ({
+      id: event.metadata.eventId,
+      event_name: event.metadata.eventName,
+      aggregate_id: event.metadata.aggregateId,
+      event_version: event.metadata.eventVersion,
+      correlation_id: event.metadata.correlationId,
+      causation_id: event.metadata.causationId,
+      payload: JSON.stringify(event.payload),
+      status: "PENDING",
+      retry_count: 0,
+      occurred_at: event.metadata.occurredAt
+    }));
 
-      await this.sequelize.query(
-        `
-        INSERT INTO outbox_events (
-            id,
-            event_name,
-            aggregate_id,
-            event_version,
-            correlation_id,
-            causation_id,
-            payload,
-            status,
-            retry_count,
-            occurred_at
-        )
-        VALUES (
-            :id,
-            :eventName,
-            :aggregateId,
-            :eventVersion,
-            :correlationId,
-            :causationId,
-            CAST(:payload AS jsonb),
-            'PENDING',
-            0,
-            :occurredAt
-        )
-        `,
-        {
-          replacements: {
-            id: metadata.eventId,
-            eventName: metadata.eventName,
-            aggregateId: metadata.aggregateId,
-            eventVersion: metadata.eventVersion,
-            correlationId: metadata.correlationId,
-            causationId: metadata.causationId,
-            occurredAt: metadata.occurredAt,
-            payload: JSON.stringify(event.payload)
-          },
-          transaction: trx
-        }
-      );
-    }
+    await db("outbox_events").insert(rows);
   }
 
   /**
-   * Fetch and lock pending events.
-   *
-   * Uses SKIP LOCKED so multiple workers
-   * can run safely.
+   * Fetch pending events.
    */
   async fetchAndLockPending(batchSize, maxRetries) {
-    const [rows] = await this.sequelize.query(
-      `
-      UPDATE outbox_events
-         SET status = 'PROCESSING'
-       WHERE id IN (
+    return this.knex.transaction(async trx => {
 
-            SELECT id
-              FROM outbox_events
-             WHERE status = 'PENDING'
-               AND retry_count < :maxRetries
-          ORDER BY occurred_at
-             LIMIT :batchSize
-             FOR UPDATE SKIP LOCKED
+      const rows = await trx("outbox_events")
+        .where("status", "PENDING")
+        .where("retry_count", "<", maxRetries)
+        .orderBy("occurred_at")
+        .limit(batchSize)
+        .forUpdate()
+        .skipLocked();
 
-       )
-
-      RETURNING *;
-      `,
-      {
-        replacements: {
-          batchSize,
-          maxRetries
-        }
+      if (rows.length === 0) {
+        return [];
       }
-    );
 
-    return rows;
+      const ids = rows.map(r => r.id);
+
+      await trx("outbox_events")
+        .whereIn("id", ids)
+        .update({
+          status: "PROCESSING"
+        });
+
+      return rows;
+    });
   }
 
   /**
-   * Mark an event as successfully dispatched.
+   * Mark dispatched.
    */
   async markAsDispatched(id) {
-    await this.sequelize.query(
-      `
-      UPDATE outbox_events
-         SET
-            status='DISPATCHED',
-            processed_at=NOW()
-       WHERE id=:id
-      `,
-      {
-        replacements: { id }
-      }
-    );
+    await this.knex("outbox_events")
+      .where({ id })
+      .update({
+        status: "DISPATCHED",
+        processed_at: this.knex.fn.now()
+      });
   }
 
   /**
-   * Increment retry count after failure.
+   * Retry.
    */
   async incrementRetry(id, errorMessage) {
-    await this.sequelize.query(
-      `
-      UPDATE outbox_events
-         SET
-            retry_count = retry_count + 1,
-            status='PENDING',
-            last_error=:error
-       WHERE id=:id
-      `,
-      {
-        replacements: {
-          id,
-          error: errorMessage
-        }
-      }
-    );
+    await this.knex("outbox_events")
+      .where({ id })
+      .increment("retry_count", 1)
+      .update({
+        status: "PENDING",
+        last_error: errorMessage
+      });
   }
 }

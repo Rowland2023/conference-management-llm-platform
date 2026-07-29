@@ -82,9 +82,7 @@ async function start() {
     console.log('📡 Database connected successfully.');
 
     // Build composition root & wire dependencies
-    appInstance = await createApp({
-      logger: console,
-    });
+    appInstance = await createApp();
 
     // Start background services & outbox daemons
     if (appInstance.start) {

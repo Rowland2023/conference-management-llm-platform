@@ -1,4 +1,4 @@
-import { DomainValidationError } from './error/DomainErrors.js';
+
 import { DomainEvent } from './DomainEvent.js'; // add this
 
 export class Entity {
@@ -9,7 +9,7 @@ export class Entity {
       throw new Error('Entity is abstract and cannot be instantiated directly');
     }
     if (!id || typeof id !== 'string' || id.trim() === '') {
-      throw new DomainValidationError('Entity must have a non-empty string ID');
+      throw new ValidationError('Entity must have a non-empty string ID');
     }
     if (!Number.isInteger(version) || version < 0) {
       throw new DomainValidationError('Entity version must be a non-negative integer');

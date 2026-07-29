@@ -1,110 +1,202 @@
-// messaging/KafkaProducer.js
-import { CompressionTypes } from "kafkajs";
+// src/shared/infrastructure/messaging/kafka/KafkaProducer.js
+
+import {
+  CompressionTypes,
+  Partitioners,
+} from "kafkajs";
 
 export class KafkaProducer {
-  constructor(kafka, config) { // UPGRADE: Accept injected kafka + config
+  /**
+   * @param {Object} deps
+   * @param {import("kafkajs").Kafka} deps.kafka
+   * @param {Object} [deps.logger]
+   * @param {Object} [deps.config]
+   */
+  constructor({
+    kafka,
+    logger = console,
+    config = {},
+  }) {
+    if (!kafka) {
+      throw new Error(
+        "KafkaProducer requires a Kafka instance."
+      );
+    }
+
+    this.logger = logger;
+    this.connected = false;
+
     this.producer = kafka.producer({
       idempotent: true,
-      maxInFlightRequests: 1, // UPGRADE: Explicit for idempotence guarantee
-      allowAutoTopicCreation: false,
-      transactionTimeout: 30000,
-     ...config,
-    });
-    this.isInitialized = false;
-    this.isReconnecting = false;
-    this.reconnectTimeoutRef = null;
 
-    this.handleDisconnect = this.handleDisconnect.bind(this);
-    this.handleCrash = this.handleCrash.bind(this);
+      // Required for exactly-once semantics
+      maxInFlightRequests: 1,
+
+      allowAutoTopicCreation: false,
+
+      transactionTimeout: 30000,
+
+      // Silence KafkaJS partition warning
+      createPartitioner:
+        Partitioners.LegacyPartitioner,
+
+      ...config,
+    });
+
+    this.registerEvents();
+  }
+
+  registerEvents() {
+    const events = this.producer.events;
+
+    this.producer.on(events.CONNECT, () => {
+      this.connected = true;
+
+      this.logger.info?.(
+        "[KafkaProducer] Connected."
+      );
+    });
+
+    this.producer.on(events.DISCONNECT, () => {
+      this.connected = false;
+
+      this.logger.warn?.(
+        "[KafkaProducer] Disconnected."
+      );
+    });
+
+    this.producer.on(events.REQUEST, ({ payload }) => {
+      this.logger.debug?.(
+        "[KafkaProducer] Request",
+        {
+          apiKey: payload.apiKey,
+          broker: payload.broker,
+          correlationId: payload.correlationId,
+        }
+      );
+    });
+
+    this.producer.on(
+      events.REQUEST_TIMEOUT,
+      ({ payload }) => {
+        this.logger.warn?.(
+          "[KafkaProducer] Request timeout",
+          {
+            broker: payload.broker,
+            correlationId:
+              payload.correlationId,
+          }
+        );
+      }
+    );
+
+    this.producer.on(
+      events.REQUEST_QUEUE_SIZE,
+      ({ payload }) => {
+        this.logger.debug?.(
+          "[KafkaProducer] Queue size",
+          {
+            queueSize: payload.queueSize,
+          }
+        );
+      }
+    );
   }
 
   async connect() {
-    if (this.isInitialized) return;
-    try {
-      console.log("[KafkaProducer] Initializing connection to cluster brokers...");
-      await this.producer.connect();
-      this.isInitialized = true;
-      this.isReconnecting = false;
-      console.log("[KafkaProducer] Connection established and stabilized successfully.");
-      this.registerInstrumentationEvents();
-    } catch (error) {
-      console.error("[KafkaProducer] Fatal initialization collapse:", error.message);
-      throw error;
+    if (this.connected) {
+      return;
     }
+
+    this.logger.info?.(
+      "[KafkaProducer] Connecting..."
+    );
+
+    await this.producer.connect();
+
+    this.connected = true;
+
+    this.logger.info?.(
+      "[KafkaProducer] Ready."
+    );
   }
 
-  registerInstrumentationEvents() {
-    this.producer.off(this.producer.events.DISCONNECT, this.handleDisconnect);
-    this.producer.off(this.producer.events.CRASH, this.handleCrash);
-    this.producer.on(this.producer.events.DISCONNECT, this.handleDisconnect);
-    this.producer.on(this.producer.events.CRASH, this.handleCrash);
-  }
-
-  handleDisconnect() {
-    console.warn("[KafkaProducer] WARNING: Internal network disconnect detected. KafkaJS is attempting self-healing recovery...");
-  }
-
-  async handleCrash(event) {
-    console.error("[KafkaProducer] FATAL: Internal driver crash detected:", event.payload.error?.message || event.payload.error);
-    this.isInitialized = false;
-    if (this.isReconnecting) return;
-    this.isReconnecting = true;
-    console.log("[KafkaProducer] Initiating hot-reload recovery sequence...");
-    try {
-      await this.producer.disconnect();
-    } catch (disconnectError) {}
-    if (this.reconnectTimeoutRef) clearTimeout(this.reconnectTimeoutRef);
-    this.reconnectTimeoutRef = setTimeout(async () => {
-      try {
-        await this.connect();
-      } catch (reconnectError) {
-        console.error("[KafkaProducer] Self-healing cycle failed:", reconnectError.message);
-        this.isReconnecting = false;
-      }
-    }, 5000);
-  }
-
-  async send(topic, payload, messageKey) {
-    if (!this.isInitialized) {
-      throw new Error("KafkaProducer Exception: Producer not initialized. Run connect() first.");
+  async publish(topic, messages) {
+    if (!this.connected) {
+      throw new Error(
+        "KafkaProducer is not connected."
+      );
     }
+
     if (!topic) {
-      throw new Error("Topic is required.");
+      throw new Error(
+        "publish() requires a topic."
+      );
     }
-    if (payload === undefined) {
-      throw new Error("Payload is required.");
+
+    if (!Array.isArray(messages)) {
+      throw new Error(
+        "publish() expects an array of messages."
+      );
     }
+
+    const normalizedMessages = messages.map(
+      (message) => ({
+        key:
+          message.key != null
+            ? String(message.key)
+            : undefined,
+
+        value:
+          typeof message.value === "string"
+            ? message.value
+            : JSON.stringify(message.value),
+
+        headers:
+          message.headers || {},
+      })
+    );
+
     await this.producer.send({
-      topic: topic,
-      compression: CompressionTypes.GZIP,
-      messages: [{
-        key: messageKey != null? String(messageKey) : undefined,
-        value: typeof payload === "string"? payload : JSON.stringify(payload),
-        headers: {
-            traceId:
-                messageKey != null
-                  ? String(messageKey)
-                  : undefined,
-            producedAt: new Date().toISOString(),
-       }
-      }],
+      topic,
+      compression:
+        CompressionTypes.GZIP,
+      messages: normalizedMessages,
     });
   }
 
+  async send(topic, payload, key) {
+    await this.publish(topic, [
+      {
+        key,
+        value: payload,
+        headers: {
+          producedAt:
+            new Date().toISOString(),
+        },
+      },
+    ]);
+  }
+
   async disconnect() {
-    if (this.reconnectTimeoutRef) {
-      clearTimeout(this.reconnectTimeoutRef);
-      this.reconnectTimeoutRef = null;
+    if (!this.connected) {
+      return;
     }
-    this.isReconnecting = false;
-    if (!this.isInitialized) return;
-    try {
-      console.log("[KafkaProducer] Draining internal memory pipelines...");
-      await this.producer.disconnect();
-      this.isInitialized = false;
-      console.log("[KafkaProducer] Broker socket lines detached cleanly.");
-    } catch (error) {
-      console.error("[KafkaProducer] Error during disconnection:", error);
-    }
+
+    this.logger.info?.(
+      "[KafkaProducer] Disconnecting..."
+    );
+
+    await this.producer.disconnect();
+
+    this.connected = false;
+
+    this.logger.info?.(
+      "[KafkaProducer] Disconnected."
+    );
+  }
+
+  isConnected() {
+    return this.connected;
   }
 }

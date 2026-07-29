@@ -2,6 +2,16 @@
 import { Router } from 'express';
 
 export default function createEventRouter(eventController) {
+
+    console.log("EVENT ROUTER DEBUG:", {
+        controller: eventController,
+        createEvent: typeof eventController?.createEvent,
+        listEvents: typeof eventController?.listEvents,
+        getEventById: typeof eventController?.getEventById,
+        rescheduleEvent: typeof eventController?.rescheduleEvent,
+        cancelEvent: typeof eventController?.cancelEvent,
+    });
+
     const router = Router();
 
     // Middleware to extract tracing headers and explicitly stick them onto the request

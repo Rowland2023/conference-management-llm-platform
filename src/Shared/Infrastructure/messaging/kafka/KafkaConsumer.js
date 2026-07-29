@@ -1,168 +1,181 @@
-// messaging/KafkaConsumer.js
-import { Kafka } from "kafkajs";
+// src/shared/infrastructure/messaging/kafka/KafkaConsumer.js
 
 export class KafkaConsumer {
-  /**
-   * @param {Kafka} kafka - Shared Kafka instance from index.js
-   * @param {object} config - consumerConfig from config.js
-   * @param {object} handlerMap - { 'orders.order_created.v1': handlerFn }
-   */
-  constructor(kafka, config, handlerMap) {
-    if (!kafka || !config?.groupId || !handlerMap) {
-      throw new Error("KafkaConsumer Invariant Violation: Missing kafka, config.groupId, or handlerMap.");
+  constructor({
+    kafka,
+    groupId,
+    logger = console,
+    config = {},
+  }) {
+    if (!kafka) {
+      throw new Error(
+        "KafkaConsumer requires a Kafka instance."
+      );
     }
 
-    this.consumer = kafka.consumer({ 
-      groupId: config.groupId,
-      maxBytesPerPartition: config.maxBytesPerPartition || 1024 * 1024 * 2,
-      sessionTimeout: config.sessionTimeout,
-      heartbeatInterval: config.heartbeatInterval,
+    if (!groupId) {
+      throw new Error(
+        "KafkaConsumer requires a groupId."
+      );
+    }
+
+    this.logger = logger;
+
+    this.consumer = kafka.consumer({
+      groupId,
       allowAutoTopicCreation: false,
+
+      sessionTimeout:
+        config.sessionTimeout ?? 30000,
+
+      heartbeatInterval:
+        config.heartbeatInterval ?? 3000,
+
+      maxBytesPerPartition:
+        config.maxBytesPerPartition ??
+        2 * 1024 * 1024,
     });
 
-    this.handlerMap = handlerMap;
-    this.topics = Object.keys(handlerMap); // UPGRADE: Derive topics from handlerMap
-    this.isInitialized = false;
-    this.isReconnecting = false;
+    this.connected = false;
+    this.running = false;
 
-    this.handleDisconnect = this.handleDisconnect.bind(this);
-    this.handleCrash = this.handleCrash.bind(this);
+    this.#registerEvents();
   }
 
-  async start() {
-    if (this.isInitialized) return;
+  #registerEvents() {
+    const events = this.consumer.events;
 
-    try {
-      console.log(`[KafkaConsumer] Attaching to cluster group: ${this.consumer.groupId}...`);
-      await this.consumer.connect();
-      this.isInitialized = true;
-      this.isReconnecting = false;
+    this.consumer.on(events.CONNECT, () => {
+      this.connected = true;
 
-      this.registerInstrumentationEvents();
-
-      await Promise.all(
-        this.topics.map(topic => this.consumer.subscribe({ topic, fromBeginning: false }))
+      this.logger.info?.(
+        "[KafkaConsumer] Connected."
       );
+    });
 
-      await this.consumer.run({
-        eachBatchAutoResolve: false,
-        eachBatch: async ({ batch, resolveOffset, heartbeat, isRunning, isStale }) => {
-          const topic = batch.topic;
-          const partition = batch.partition;
-          const handler = this.handlerMap[topic];
+    this.consumer.on(events.DISCONNECT, () => {
+      this.connected = false;
 
-          if (!handler) {
-            console.error(`[KafkaConsumer] No handler registered for topic ${topic}`);
-            return;
-          }
+      this.logger.warn?.(
+        "[KafkaConsumer] Disconnected."
+      );
+    });
 
-          for (const message of batch.messages) {
-            if (!isRunning() || isStale()) {
-              console.warn(`[KafkaConsumer] Batch partition ownership is stale. Halting loop.`);
-              break;
-            }
+    this.consumer.on(events.CRASH, ({ payload }) => {
+      this.connected = false;
 
-            const success = await this.handleMessageExecution({ topic, partition, message, handler });
-            
-            if (success) {
-              resolveOffset(message.offset);
-            } else {
-              // CRITICAL: Stop batch on DLQ failure to prevent data loss
-              throw new Error(`[KafkaConsumer] Critical processing block at offset ${message.offset}. Halting batch.`);
-            }
-
-            await heartbeat();
-          }
-        }
-      });
-
-      console.log("[KafkaConsumer] Cluster subscription pipelines are live and listening.");
-    } catch (error) {
-      console.error("[KafkaConsumer] Fatal instantiation crash:", error.message);
-      this.isInitialized = false;
-      throw error;
-    }
+      this.logger.error?.(
+        "[KafkaConsumer] Crash detected.",
+        payload.error
+      );
+    });
   }
 
-  async handleMessageExecution({ topic, partition, message, handler }) {
-    const messageId = message.key ? message.key.toString() : `${topic}-${partition}-${message.offset}`;
-    const traceId = message.headers?.traceId?.toString() || messageId;
-    
-    try {
-      const rawValue = message.value ? message.value.toString() : null;
-      const payload = rawValue && (rawValue.startsWith('{') || rawValue.startsWith('[')) 
-        ? JSON.parse(rawValue) 
-        : rawValue;
+  async connect() {
+    if (this.connected) {
+      return;
+    }
 
-      const eventContext = {
-        id: messageId,
-        traceId,
+    await this.consumer.connect();
+
+    this.connected = true;
+  }
+
+  async subscribe(topics) {
+    if (!Array.isArray(topics)) {
+      throw new Error(
+        "subscribe() expects an array of topics."
+      );
+    }
+
+    for (const topic of topics) {
+      await this.consumer.subscribe({
+        topic,
+        fromBeginning: false,
+      });
+    }
+
+    this.logger.info?.(
+      `[KafkaConsumer] Subscribed to ${topics.length} topic(s).`
+    );
+  }
+
+  async start(handler) {
+    if (!this.connected) {
+      throw new Error(
+        "KafkaConsumer is not connected."
+      );
+    }
+
+    if (this.running) {
+      return;
+    }
+
+    this.running = true;
+
+    await this.consumer.run({
+      autoCommit: true,
+
+      eachMessage: async ({
         topic,
         partition,
-        offset: message.offset,
-        timestamp: message.timestamp,
-        eventType: message.headers?.eventType?.toString() || topic,
-        payload
-      };
+        message,
+      }) => {
+        let payload;
 
-      // UPGRADE: Handler should be idempotent itself, or wrap it here with DB check
-      await handler(eventContext);
-      return true;
+        try {
+          payload =
+            message.value == null
+              ? null
+              : JSON.parse(
+                  message.value.toString()
+                );
+        } catch {
+          payload =
+            message.value?.toString() ?? null;
+        }
 
-    } catch (error) {
-      console.error(
-        `[KafkaConsumer] [CRITICAL FAILURE] topic: ${topic}, offset: ${message.offset}, key: ${messageId}, error:`, 
-        error.message
-      );
-      
-      try {
-        await this.routeToDeadLetterQueue(topic, message, error);
-        return true; 
-      } catch (dlqError) {
-        console.error("[KafkaConsumer] FATAL: DLQ write failed. Halting offset updates:", dlqError.message);
-        return false; 
-      }
-    }
-  }
+        const headers = {};
 
-  async routeToDeadLetterQueue(originTopic, brokenMessage, processingError) {
-    // TODO: Implement actual DLQ publish using producer
-    // For now, just log. In prod, send to `${originTopic}.dlq.v1`
-    console.warn(`[KafkaConsumer] DLQ: ${originTopic}-dlq`, {
-      key: brokenMessage.key?.toString(),
-      error: processingError.message,
+        if (message.headers) {
+          for (const [key, value] of Object.entries(
+            message.headers
+          )) {
+            headers[key] =
+              value?.toString();
+          }
+        }
+
+        await handler({
+          topic,
+          partition,
+          offset: message.offset,
+          key:
+            message.key?.toString() ??
+            null,
+          payload,
+          headers,
+        });
+      },
     });
+
+    this.logger.info?.(
+      "[KafkaConsumer] Started."
+    );
   }
 
-  registerInstrumentationEvents() {
-    this.consumer.off(this.consumer.events.DISCONNECT, this.handleDisconnect);
-    this.consumer.off(this.consumer.events.CRASH, this.handleCrash);
-    this.consumer.on(this.consumer.events.DISCONNECT, this.handleDisconnect);
-    this.consumer.on(this.consumer.events.CRASH, this.handleCrash);
-  }
-
-  handleDisconnect() {
-    console.warn("[KafkaConsumer] WARNING: Broker connection dropped. Auto-rebalancing...");
-  }
-
-  async handleCrash(event) {
-    console.error("[KafkaConsumer] FATAL: Group crash:", event.payload.error?.message || event.payload.error);
-    this.isInitialized = false;
-  }
-
-  async healthCheck() {
-    return this.isInitialized && !this.isReconnecting;
-  }
-
-  async stop() {
-    if (!this.isInitialized) return;
-    try {
-      console.log("[KafkaConsumer] Signaling intent to depart consumer group cleanly...");
-      await this.consumer.disconnect();
-      this.isInitialized = false;
-      console.log("[KafkaConsumer] Consumer pipeline safely disconnected.");
-    } catch (error) {
-      console.error("[KafkaConsumer] Error during teardown:", error);
+  async disconnect() {
+    if (!this.connected) {
+      return;
     }
+
+    await this.consumer.disconnect();
+
+    this.connected = false;
+    this.running = false;
+
+    this.logger.info?.(
+      "[KafkaConsumer] Disconnected."
+    );
   }
 }
