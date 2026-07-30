@@ -1,6 +1,10 @@
-// KafkaProducer.js
+// src/shared/infrastructure/messaging/kafka/KafkaProducer.js
 
-import { CompressionTypes } from "kafkajs";
+import {
+    CompressionTypes,
+    Partitioners,
+} from "kafkajs";
+
 
 export class KafkaProducer {
 
@@ -11,35 +15,51 @@ export class KafkaProducer {
     }) {
 
         if (!kafka) {
-            throw new Error("KafkaProducer requires kafka instance.");
+            throw new Error(
+                "KafkaProducer requires kafka instance."
+            );
         }
 
         this.logger = logger;
 
-        this.producer = kafka.producer({
+        this.instrumentationEmitter =
+            kafka.instrumentationEmitter;
 
-            idempotent: true,
 
-            maxInFlightRequests: 1,
+        this.producer =
+            kafka.producer({
 
-            allowAutoTopicCreation: false,
+                idempotent: true,
 
-            transactionTimeout: 30000,
+                maxInFlightRequests: 1,
 
-            ...config,
+                allowAutoTopicCreation: false,
 
-        });
+                transactionTimeout: 30000,
+
+                createPartitioner:
+                    Partitioners.LegacyPartitioner,
+
+                ...config,
+
+            });
+
 
         this.isInitialized = false;
+
         this.isReconnecting = false;
+
         this.reconnectTimeoutRef = null;
+
 
         this.handleDisconnect =
             this.handleDisconnect.bind(this);
 
         this.handleCrash =
             this.handleCrash.bind(this);
+
     }
+
 
     async connect() {
 
@@ -47,57 +67,106 @@ export class KafkaProducer {
             return;
         }
 
+
         await this.producer.connect();
+
 
         this.isInitialized = true;
 
+
         this.registerInstrumentationEvents();
 
-        this.logger.info?.("Kafka producer connected.");
+
+        this.logger.info?.(
+            "Kafka producer connected."
+        );
+
     }
 
+
+    /**
+     * KafkaJS instrumentation is handled
+     * through kafka.instrumentationEmitter,
+     * not the producer instance.
+     */
     registerInstrumentationEvents() {
 
-        const { DISCONNECT, CRASH } =
-            this.producer.events;
+        if (!this.instrumentationEmitter) {
+            return;
+        }
 
-        this.producer.off(DISCONNECT, this.handleDisconnect);
-        this.producer.off(CRASH, this.handleCrash);
 
-        this.producer.on(DISCONNECT, this.handleDisconnect);
-        this.producer.on(CRASH, this.handleCrash);
+        this.instrumentationEmitter.on(
+            "producer.disconnect",
+            this.handleDisconnect
+        );
+
+
+        this.instrumentationEmitter.on(
+            "producer.crash",
+            this.handleCrash
+        );
+
     }
 
-    handleDisconnect() {
+
+    handleDisconnect(event) {
 
         this.logger.warn?.(
+            {
+                event,
+            },
             "Kafka producer disconnected."
         );
 
     }
 
+
     async handleCrash(event) {
 
+        const error =
+            event?.payload?.error;
+
+
         this.logger.error?.(
-            "Kafka producer crashed.",
-            event.payload.error
+            {
+                error,
+            },
+            "Kafka producer crashed."
         );
 
+
         this.isInitialized = false;
+
 
         if (this.isReconnecting) {
             return;
         }
 
+
         this.isReconnecting = true;
+
 
         try {
 
             await this.producer.disconnect();
 
-        } catch {}
+        } catch (err) {
 
-        clearTimeout(this.reconnectTimeoutRef);
+            this.logger.warn?.(
+                {
+                    err,
+                },
+                "Kafka producer disconnect failed during recovery."
+            );
+
+        }
+
+
+        clearTimeout(
+            this.reconnectTimeoutRef
+        );
+
 
         this.reconnectTimeoutRef =
             setTimeout(async () => {
@@ -106,58 +175,117 @@ export class KafkaProducer {
 
                     await this.connect();
 
-                    this.isReconnecting = false;
+
+                    this.logger.info?.(
+                        "Kafka producer recovered."
+                    );
+
 
                 } catch (err) {
 
-                    this.logger.error?.(err);
+                    this.logger.error?.(
+                        {
+                            err,
+                        },
+                        "Kafka producer recovery failed."
+                    );
+
+                } finally {
+
+                    this.isReconnecting = false;
 
                 }
 
+
             }, 5000);
+
     }
 
-    async publish(topic, messages) {
+
+
+    async publish(
+        topic,
+        messages
+    ) {
 
         if (!this.isInitialized) {
+
             throw new Error(
                 "KafkaProducer not connected."
             );
+
         }
+
+
+        if (!Array.isArray(messages) ||
+            messages.length === 0) {
+
+            throw new Error(
+                "KafkaProducer.publish requires messages."
+            );
+
+        }
+
+
 
         await this.producer.send({
 
             topic,
 
-            compression: CompressionTypes.GZIP,
+            compression:
+                CompressionTypes.GZIP,
 
-            messages: messages.map(message => ({
 
-                key: message.key,
+            messages:
+                messages.map(message => ({
 
-                value:
-                    typeof message.value === "string"
-                        ? message.value
-                        : JSON.stringify(message.value),
+                    key:
+                        message.key
+                            ? String(message.key)
+                            : undefined,
 
-                headers: message.headers,
 
-            })),
+                    value:
+                        typeof message.value === "string"
+                            ? message.value
+                            : JSON.stringify(
+                                message.value
+                            ),
+
+
+                    headers:
+                        message.headers,
+
+                })),
 
         });
+
     }
+
+
 
     async disconnect() {
 
-        clearTimeout(this.reconnectTimeoutRef);
+        clearTimeout(
+            this.reconnectTimeoutRef
+        );
+
 
         if (!this.isInitialized) {
             return;
         }
 
+
         await this.producer.disconnect();
 
+
         this.isInitialized = false;
+
+
+        this.logger.info?.(
+            "Kafka producer disconnected."
+        );
+
     }
 
 }
