@@ -1,5 +1,5 @@
 import "dotenv/config";
-
+import { PinoLogger } from "./cross-cutting/logging/PinoLogger.js";
 import { createApp } from "./app.js";
 
 import {
@@ -10,7 +10,7 @@ import {
 const PORT = Number(process.env.PORT) || 3000;
 const SHUTDOWN_TIMEOUT = 10_000;
 
-const logger = console;
+const logger = new PinoLogger();
 
 let server = null;
 let application = null;
@@ -127,8 +127,12 @@ async function shutdown(signal) {
   } catch (error) {
     clearTimeout(timeout);
 
-    logger.error("❌ Shutdown failed.");
-    logger.error(error);
+    logger.error(
+    "❌ Failed to start application.",
+    {
+        err: error,
+    }
+);
 
     process.exit(1);
   }
