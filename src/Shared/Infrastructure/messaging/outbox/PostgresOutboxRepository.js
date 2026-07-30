@@ -27,15 +27,14 @@ export class PostgresOutboxRepository {
      * Persist one or more domain events.
      *
      * IMPORTANT:
-     * This MUST execute inside the same database transaction
-     * that persists the aggregate.
+     * Must execute inside the same transaction
+     * as the aggregate persistence.
      */
     async save(events, trx = this.db) {
 
-        const items =
-            Array.isArray(events)
-                ? events
-                : [events];
+        const items = Array.isArray(events)
+            ? events
+            : [events];
 
         const rows = items.map((event) => {
 
@@ -45,23 +44,33 @@ export class PostgresOutboxRepository {
 
                 id: metadata.eventId,
 
-                event_name: metadata.eventName,
+                aggregate_type:
+                    event.aggregateType ??
+                    metadata.aggregateType ??
+                    event.constructor.name,
 
-                aggregate_id: metadata.aggregateId,
+                aggregate_id:
+                    metadata.aggregateId,
 
-                event_version: metadata.eventVersion,
+                event_type:
+                    metadata.eventName,
 
-                correlation_id: metadata.correlationId,
-
-                causation_id: metadata.causationId,
-
-                payload: JSON.stringify(event.payload),
+                payload:
+                    JSON.stringify(event.payload),
 
                 status: "PENDING",
 
                 retry_count: 0,
 
-                occurred_at: metadata.occurredAt,
+                max_retries: 5,
+
+                next_retry_at: trx.fn.now(),
+
+                correlation_id:
+                    metadata.correlationId ?? null,
+
+                created_at:
+                    metadata.occurredAt ?? trx.fn.now(),
 
             };
 
@@ -72,8 +81,7 @@ export class PostgresOutboxRepository {
     }
 
     /**
-     * Fetch a batch of pending events
-     * and lock them for processing.
+     * Fetch pending events and lock them.
      */
     async fetchAndLockPending(
         batchSize = 100,
@@ -82,14 +90,14 @@ export class PostgresOutboxRepository {
 
         return this.db.transaction(async (trx) => {
 
-            const rows =
-                await trx(this.table)
-                    .where("status", "PENDING")
-                    .where("retry_count", "<", maxRetries)
-                    .orderBy("occurred_at")
-                    .limit(batchSize)
-                    .forUpdate()
-                    .skipLocked();
+            const rows = await trx(this.table)
+                .where("status", "PENDING")
+                .where("retry_count", "<", maxRetries)
+                .where("next_retry_at", "<=", trx.fn.now())
+                .orderBy("created_at", "asc")
+                .limit(batchSize)
+                .forUpdate()
+                .skipLocked();
 
             if (rows.length === 0) {
                 return [];
@@ -98,7 +106,7 @@ export class PostgresOutboxRepository {
             await trx(this.table)
                 .whereIn(
                     "id",
-                    rows.map(row => row.id),
+                    rows.map((row) => row.id),
                 )
                 .update({
                     status: "PROCESSING",
@@ -119,7 +127,7 @@ export class PostgresOutboxRepository {
             .where({ id })
             .update({
 
-                status: "DISPATCHED",
+                status: "PROCESSED",
 
                 processed_at: this.db.fn.now(),
 
@@ -143,6 +151,10 @@ export class PostgresOutboxRepository {
                 status: "PENDING",
 
                 last_error: errorMessage,
+
+                next_retry_at: this.db.raw(
+                    "NOW() + INTERVAL '30 seconds'"
+                ),
 
             });
 
