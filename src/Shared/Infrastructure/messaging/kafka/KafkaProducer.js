@@ -5,7 +5,6 @@ import {
     Partitioners,
 } from "kafkajs";
 
-
 export class KafkaProducer {
 
     constructor({
@@ -16,7 +15,7 @@ export class KafkaProducer {
 
         if (!kafka) {
             throw new Error(
-                "KafkaProducer requires kafka instance."
+                "KafkaProducer requires a Kafka instance."
             );
         }
 
@@ -24,7 +23,6 @@ export class KafkaProducer {
 
         this.instrumentationEmitter =
             kafka.instrumentationEmitter;
-
 
         this.producer =
             kafka.producer({
@@ -44,13 +42,11 @@ export class KafkaProducer {
 
             });
 
-
         this.isInitialized = false;
 
         this.isReconnecting = false;
 
         this.reconnectTimeoutRef = null;
-
 
         this.handleDisconnect =
             this.handleDisconnect.bind(this);
@@ -60,22 +56,19 @@ export class KafkaProducer {
 
     }
 
-
     async connect() {
 
         if (this.isInitialized) {
             return;
         }
 
-
         await this.producer.connect();
-
 
         this.isInitialized = true;
 
+        this.isReconnecting = false;
 
         this.registerInstrumentationEvents();
-
 
         this.logger.info?.(
             "Kafka producer connected."
@@ -83,69 +76,50 @@ export class KafkaProducer {
 
     }
 
-
-    /**
-     * KafkaJS instrumentation is handled
-     * through kafka.instrumentationEmitter,
-     * not the producer instance.
-     */
     registerInstrumentationEvents() {
 
         if (!this.instrumentationEmitter) {
             return;
         }
 
-
         this.instrumentationEmitter.on(
             "producer.disconnect",
-            this.handleDisconnect
+            this.handleDisconnect,
         );
-
 
         this.instrumentationEmitter.on(
             "producer.crash",
-            this.handleCrash
+            this.handleCrash,
         );
 
     }
-
 
     handleDisconnect(event) {
 
         this.logger.warn?.(
-            {
-                event,
-            },
+            { event },
             "Kafka producer disconnected."
         );
 
     }
-
 
     async handleCrash(event) {
 
         const error =
             event?.payload?.error;
 
-
         this.logger.error?.(
-            {
-                error,
-            },
+            { error },
             "Kafka producer crashed."
         );
 
-
         this.isInitialized = false;
-
 
         if (this.isReconnecting) {
             return;
         }
 
-
         this.isReconnecting = true;
-
 
         try {
 
@@ -154,19 +128,15 @@ export class KafkaProducer {
         } catch (err) {
 
             this.logger.warn?.(
-                {
-                    err,
-                },
+                { err },
                 "Kafka producer disconnect failed during recovery."
             );
 
         }
 
-
         clearTimeout(
             this.reconnectTimeoutRef
         );
-
 
         this.reconnectTimeoutRef =
             setTimeout(async () => {
@@ -175,18 +145,14 @@ export class KafkaProducer {
 
                     await this.connect();
 
-
                     this.logger.info?.(
                         "Kafka producer recovered."
                     );
 
-
                 } catch (err) {
 
                     this.logger.error?.(
-                        {
-                            err,
-                        },
+                        { err },
                         "Kafka producer recovery failed."
                     );
 
@@ -196,16 +162,13 @@ export class KafkaProducer {
 
                 }
 
-
             }, 5000);
 
     }
 
-
-
     async publish(
         topic,
-        messages
+        messages,
     ) {
 
         if (!this.isInitialized) {
@@ -216,17 +179,24 @@ export class KafkaProducer {
 
         }
 
-
-        if (!Array.isArray(messages) ||
-            messages.length === 0) {
+        if (!topic) {
 
             throw new Error(
-                "KafkaProducer.publish requires messages."
+                "KafkaProducer.publish requires a topic."
             );
 
         }
 
+        if (
+            !Array.isArray(messages) ||
+            messages.length === 0
+        ) {
 
+            throw new Error(
+                "KafkaProducer.publish requires at least one message."
+            );
+
+        }
 
         await this.producer.send({
 
@@ -235,23 +205,18 @@ export class KafkaProducer {
             compression:
                 CompressionTypes.GZIP,
 
-
             messages:
-                messages.map(message => ({
+                messages.map((message) => ({
 
                     key:
-                        message.key
+                        message.key != null
                             ? String(message.key)
                             : undefined,
-
 
                     value:
                         typeof message.value === "string"
                             ? message.value
-                            : JSON.stringify(
-                                message.value
-                            ),
-
+                            : JSON.stringify(message.value),
 
                     headers:
                         message.headers,
@@ -262,25 +227,23 @@ export class KafkaProducer {
 
     }
 
-
-
     async disconnect() {
 
         clearTimeout(
             this.reconnectTimeoutRef
         );
 
+        this.reconnectTimeoutRef = null;
+
+        this.isReconnecting = false;
 
         if (!this.isInitialized) {
             return;
         }
 
-
         await this.producer.disconnect();
 
-
         this.isInitialized = false;
-
 
         this.logger.info?.(
             "Kafka producer disconnected."
