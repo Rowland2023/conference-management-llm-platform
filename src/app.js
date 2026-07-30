@@ -43,7 +43,7 @@ export async function createApp({
             logger,
         });
 
-
+    
     const modules =
         await bootstrapModules({
             ...infrastructure,
