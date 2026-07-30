@@ -1,3 +1,4 @@
+
 import 'dotenv/config';
 import { createApp } from './app.js';
 import {
@@ -52,9 +53,50 @@ async function shutdown(signal) {
   } catch (error) {
     console.error('❌ Error during shutdown:', error);
     clearTimeout(forceExitTimeout);
+    
     process.exit(1);
   }
+
+/* -------------------------------------------------------------------------- */
+/* Infrastructure                                                               */
+/* -------------------------------------------------------------------------- */
+
+async function verifyInfrastructure() {
+  await verifyDatabaseConnection();
+
+  logger.info("📡 Database connected successfully.");
 }
+
+/* -------------------------------------------------------------------------- */
+/* HTTP Server                                                                  */
+/* -------------------------------------------------------------------------- */
+
+function startHttpServer(app) {
+  return new Promise((resolve, reject) => {
+    const httpServer = app.listen(PORT);
+
+    httpServer.once("listening", () => {
+      resolve(httpServer);
+    });
+
+    httpServer.once("error", reject);
+  });
+}
+
+function stopHttpServer() {
+  if (!server) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    server.close(error => {
+      if (error) {
+        return reject(error);
+      }
+
+      logger.info("✅ HTTP server stopped.");
+
+      resolve();
 
 /**
  * Process lifecycle handlers
@@ -97,11 +139,80 @@ async function start() {
         `🚀 Conference Management API running on http://localhost:${PORT}`
       );
     });
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/* Graceful Shutdown                                                            */
+/* -------------------------------------------------------------------------- */
+
+async function shutdown(signal) {
+  if (shuttingDown) {
+    return;
+  }
+
+  shuttingDown = true;
+
+  logger.info(`\n${signal} received. Starting graceful shutdown...`);
+
+  const timeout = setTimeout(() => {
+    logger.error(
+      `❌ Shutdown exceeded ${SHUTDOWN_TIMEOUT}ms. Forcing exit.`
+    );
+
+    process.exit(1);
+  }, SHUTDOWN_TIMEOUT);
+
+  try {
+    await stopHttpServer();
+
+    if (application?.stop) {
+      await application.stop();
+
+      logger.info("✅ Application stopped.");
+    }
+
+    await closeDatabaseConnection();
+
+    logger.info("✅ Database connection closed.");
+
+    clearTimeout(timeout);
+
+    process.exit(0);
   } catch (error) {
-    console.error('❌ Failed to start application.');
-    console.error(error);
+    clearTimeout(timeout);
+
+    logger.error("❌ Shutdown failed.");
+    logger.error(error);
+
     process.exit(1);
   }
 }
 
-start();
+/* -------------------------------------------------------------------------- */
+/* Process Events                                                               */
+/* -------------------------------------------------------------------------- */
+
+process.once("SIGINT", () => shutdown("SIGINT"));
+
+process.once("SIGTERM", () => shutdown("SIGTERM"));
+
+process.once("uncaughtException", error => {
+  logger.error("❌ Uncaught Exception");
+  logger.error(error);
+
+  shutdown("uncaughtException");
+});
+
+process.once("unhandledRejection", reason => {
+  logger.error("❌ Unhandled Rejection");
+  logger.error(reason);
+
+  shutdown("unhandledRejection");
+});
+
+/* -------------------------------------------------------------------------- */
+/* Start Application                                                            */
+/* -------------------------------------------------------------------------- */
+
+bootstrap();
