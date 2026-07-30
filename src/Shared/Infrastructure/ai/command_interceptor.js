@@ -1,193 +1,132 @@
-import { performance } from "node:perf_hooks";
+import { performance } from 'perf_hooks';
 
-export class LLMAuthorizationError extends Error {
+// Definitive custom error abstractions for high-fidelity logs
+export class LLMAuthorizationError extends Error { 
   constructor(message) {
     super(message);
-    this.name = "LLMAuthorizationError";
+    this.name = 'LLM_AUTHORIZATION_ERROR';
   }
 }
 
-export class LLMFeatureDisabledError extends Error {
+export class LLMFeatureDisabledError extends Error { 
   constructor(message) {
     super(message);
-    this.name = "LLMFeatureDisabledError";
+    this.name = 'LLM_FEATURE_DISABLED_ERROR';
   }
 }
 
-export class LLMUseCaseMappingError extends Error {
+export class LLMUseCaseMappingError extends Error { 
   constructor(message) {
     super(message);
-    this.name = "LLMUseCaseMappingError";
+    this.name = 'LLM_USE_CASE_MAPPING_ERROR';
   }
 }
 
+/**
+ * Enterprise Ingress Guardrail Interceptor
+ * Dynamically enforces corporate governance, compliance, and metrics 
+ * over passive LLM function-calling declarations.
+ */
 export class LLMCommandInterceptor {
-  constructor({
-    toolDefinitions = [],
-    featureFlags = {},
-    telemetry = null,
-    logger,
-  }) {
-    this.logger = logger;
-    this.telemetry = telemetry;
-    this.featureFlags = featureFlags;
-
-    this.tools = new Map();
-
-    for (const tool of toolDefinitions) {
-      this.tools.set(tool.name, tool);
-    }
-  }
-
-  async process(parsedIntent, userContext = {}) {
-    const {
-      useCase: toolName,
-      payload = {},
-    } = parsedIntent;
-
-    const tool = this.tools.get(toolName);
-
-    if (!tool) {
-      this.telemetry?.counter?.(
-        "llm_unknown_tool",
-        1,
-        { tool: toolName }
-      );
-
-      throw new LLMUseCaseMappingError(
-        `Unknown tool '${toolName}'.`
-      );
+  /**
+   * @param {Object} deps
+   * @param {Map<string, Object>} deps.useCaseRegistry - Maps useCase string names to execution instances
+   * @param {Array<Object>} deps.toolDefinitions - The array containing your tool configs (like createEventToolDef)
+   * @param {Object} deps.featureFlags - Feature flagging provider (e.g., LaunchDarkly wrapper)
+   * @param {Object} deps.telemetryEngine - Systems metrics aggregator (e.g., Prometheus/OpenTelemetry client)
+   */
+  constructor(deps) {
+    if (!deps.useCaseRegistry || !deps.toolDefinitions || !deps.featureFlags || !deps.telemetryEngine) {
+      throw new Error('LLMCommandInterceptor initialization error: Missing required system dependencies.');
     }
 
-    this.ensureFeatureEnabled(tool);
-    this.ensureAuthorized(tool, userContext);
-
-    return this.execute(tool, payload, userContext);
-  }
-
-  ensureFeatureEnabled(tool) {
-    if (
-      tool.featureFlag &&
-      this.featureFlags[tool.featureFlag] === false
-    ) {
-      throw new LLMFeatureDisabledError(
-        `${tool.name} is disabled.`
-      );
-    }
-  }
-
-  ensureAuthorized(tool, userContext) {
-    if (!tool.requiresRole?.length) {
-      return;
-    }
-
-    const roles = userContext.roles ?? [];
-
-    const authorized =
-      tool.requiresRole.some(role =>
-        roles.includes(role)
-      );
-
-    if (authorized) {
-      return;
-    }
-
-    this.telemetry?.counter?.(
-      "llm_authorization_failure",
-      1,
-      { tool: tool.name }
-    );
-
-    throw new LLMAuthorizationError(
-      `Access denied for '${tool.name}'.`
+    this.useCaseRegistry = deps.useCaseRegistry;
+    this.featureFlags = deps.featureFlags;
+    this.telemetry = deps.telemetryEngine;
+    
+    // Index tool definitions by tool string name for O(1) runtime lookups
+    this.toolDefinitions = new Map(
+      deps.toolDefinitions.map(def => [def.name, def])
     );
   }
 
-  async execute(tool, payload, userContext) {
-    if (typeof tool.handler !== "function") {
-      throw new LLMUseCaseMappingError(
-        `Tool '${tool.name}' has no executable handler.`
-      );
+  /**
+   * Orchestrates the active enforcement and execution lifecycle of an AI intent
+   * @param {Object} parsedIntent - The parsed object emitted by your OpenAIClient
+   * @param {string} parsedIntent.useCase - Name of the chosen tool
+   * @param {Object} parsedIntent.payload - The validated Zod arguments payload
+   * @param {Object} userContext - Current authenticated actor session metadata
+   * @param {string} userContext.id - User UUID
+   * @param {string} userContext.tenantId - Enterprise tenant grouping identifier
+   * @param {Array<string>} userContext.roles - Assigned security roles (e.g., ['attendee', 'organizer'])
+   */
+  async process(parsedIntent, userContext) {
+    const { useCase: toolName, payload } = parsedIntent;
+    const toolDef = this.toolDefinitions.get(toolName);
+
+    if (!toolDef) {
+      this.telemetry.counter('llm_unmapped_tool_failures', 1, { attemptedTool: toolName });
+      throw new LLMUseCaseMappingError(`System Configuration Fault: No tool definition found for '${toolName}'.`);
     }
 
-    const started = performance.now();
+    // 1. Feature Flag Guardrail Enforcement
+    const isEnabled = await this.featureFlags.isEnabled(toolDef.featureFlag, userContext.tenantId);
+    if (!isEnabled) {
+      this.telemetry.counter('llm_feature_gate_rejections', 1, { tool: toolDef.name });
+      throw new LLMFeatureDisabledError(`Access Denied: The tool feature policy '${toolDef.featureFlag}' is disabled.`);
+    }
+
+    // 2. Role-Based Access Control (RBAC) Verification
+    const hasPermission = toolDef.requiresRole.some(role => userContext.roles.includes(role));
+    if (!hasPermission) {
+      this.telemetry.emitAlert('UNAUTHORIZED_LLM_COMMAND_EXPLOIT_ATTEMPT', {
+        tool: toolDef.name,
+        userId: userContext.id,
+        userRoles: userContext.roles
+      });
+      throw new LLMAuthorizationError(`Security Rejection: Footprint insufficient for target useCase capability.`);
+    }
+
+    // 3. Forward execution to monitored core domain channel
+    return await this.executeWithTelemetry(toolDef, payload, userContext);
+  }
+
+  /**
+   * Private executor that runs the pure application usecase wrapped inside latency and financial tracking bounds
+   * @private
+   */
+  async executeWithTelemetry(toolDef, payload, userContext) {
+    const startTime = performance.now();
+    const useCaseInstance = this.useCaseRegistry.get(toolDef.useCase);
+
+    if (!useCaseInstance) {
+      throw new LLMUseCaseMappingError(`Infrastructure Link Failure: Target usecase execution handler '${toolDef.useCase}' unbonded.`);
+    }
 
     try {
-      const result =
-        await tool.handler(payload, userContext);
+      // Execute pure application business use case boundary
+      const result = await useCaseInstance.execute(payload, userContext);
+      
+      const durationMs = performance.now() - startTime;
 
-      this.recordSuccess(
-        tool,
-        performance.now() - started
-      );
+      // Emit high-precision Prometheus/Grafana metrics
+      this.telemetry.histogram('llm_tool_execution_duration_ms', durationMs, { tool: toolDef.name });
+      this.telemetry.counter('llm_financial_burn_cents', toolDef.costCents, { tool: toolDef.name });
+
+      // Service Level Agreement (SLA) Monitoring Deficit Alerting
+      if (durationMs > toolDef.slaMs) {
+        console.warn(`[SLA_BREACH] UseCase: ${toolDef.name} Latency: ${durationMs.toFixed(2)}ms | Threshold Target: ${toolDef.slaMs}ms`);
+        this.telemetry.counter('llm_sla_breach_count', 1, { tool: toolDef.name });
+      }
 
       return result;
+
     } catch (error) {
-      this.recordFailure(tool, error);
+      this.telemetry.counter('llm_tool_execution_failures', 1, { 
+        tool: toolDef.name, 
+        errorClass: error.name || 'UnknownError' 
+      });
       throw error;
     }
-  }
-
-  recordSuccess(tool, duration) {
-    this.telemetry?.histogram?.(
-      "llm_execution_duration_ms",
-      duration,
-      { tool: tool.name }
-    );
-
-    this.telemetry?.counter?.(
-      "llm_tool_success",
-      1,
-      { tool: tool.name }
-    );
-
-    if (
-      tool.slaMs &&
-      duration > tool.slaMs
-    ) {
-      this.logger?.warn?.(
-        {
-          tool: tool.name,
-          duration,
-          sla: tool.slaMs,
-        },
-        "LLM tool exceeded SLA."
-      );
-    }
-
-    this.logger?.debug?.(
-      {
-        tool: tool.name,
-        duration,
-      },
-      "LLM tool executed."
-    );
-  }
-
-  recordFailure(tool, error) {
-    this.telemetry?.counter?.(
-      "llm_tool_failure",
-      1,
-      {
-        tool: tool.name,
-        error: error.name,
-      }
-    );
-
-    this.logger?.error?.(
-      {
-        err: error,
-        tool: tool.name,
-      },
-      "LLM tool failed."
-    );
-  }
-
-  getTool(name) {
-    return this.tools.get(name);
-  }
-
-  hasTool(name) {
-    return this.tools.has(name);
   }
 }

@@ -1,302 +1,188 @@
 /**
  * @file src/shared/infrastructure/messaging/outbox/OutboxWorker.js
- *
- * Transactional Outbox Worker
- *
- * Responsibilities
- * ----------------
- * - Poll unpublished outbox events.
- * - Dispatch events through OutboxDispatcher.
- * - Mark successful events.
- * - Retry failed events.
- * - Run continuously until stopped.
+ * @description Transactional Outbox background worker.
  */
 
 export class OutboxWorker {
 
+    /**
+     * @param {Object} params
+     * @param {PostgresOutboxRepository} params.outboxRepository
+     * @param {KafkaEventBus} params.eventBus
+     * @param {Object} [params.logger]
+     * @param {number} [params.pollIntervalMs]
+     * @param {number} [params.batchSize]
+     * @param {number} [params.maxRetries]
+     */
     constructor({
-
         outboxRepository,
-
-        dispatcher,
-
+        eventBus,
         logger = console,
-
         pollIntervalMs = 3000,
-
         batchSize = 100,
-
         maxRetries = 5,
-
     }) {
 
         if (!outboxRepository) {
-
             throw new Error(
-                "OutboxWorker requires outboxRepository."
+                "OutboxWorker requires an outboxRepository."
             );
-
         }
 
-        if (!dispatcher) {
-
+        if (!eventBus) {
             throw new Error(
-                "OutboxWorker requires dispatcher."
+                "OutboxWorker requires an eventBus."
             );
-
         }
 
-        this.outboxRepository =
-            outboxRepository;
+        this.outboxRepository = outboxRepository;
+        this.eventBus = eventBus;
 
-        this.dispatcher =
-            dispatcher;
+        this.logger = logger;
 
-        this.logger =
-            logger;
-
-        this.pollIntervalMs =
-            pollIntervalMs;
-
-        this.batchSize =
-            batchSize;
-
-        this.maxRetries =
-            maxRetries;
+        this.pollIntervalMs = pollIntervalMs;
+        this.batchSize = batchSize;
+        this.maxRetries = maxRetries;
 
         this.running = false;
-
-        this.processing = false;
-
         this.timer = null;
-
     }
 
-    /* ------------------------------------------------------ */
-    /* Public API                                              */
-    /* ------------------------------------------------------ */
-
-    async start() {
+    /**
+     * Starts the polling loop.
+     */
+    start() {
 
         if (this.running) {
-
             return;
-
         }
 
         this.running = true;
 
         this.logger.info?.(
-            "OutboxWorker started."
+            "[OutboxWorker] Started."
         );
 
         this.#schedule();
 
     }
 
+    /**
+     * Stops the worker.
+     */
     async stop() {
 
         this.running = false;
 
         if (this.timer) {
-
             clearTimeout(this.timer);
-
             this.timer = null;
-
-        }
-
-        while (this.processing) {
-
-            await new Promise(resolve =>
-                setTimeout(resolve, 100)
-            );
-
         }
 
         this.logger.info?.(
-            "OutboxWorker stopped."
+            "[OutboxWorker] Stopped."
         );
 
     }
 
-    /* ------------------------------------------------------ */
-    /* Scheduler                                               */
-    /* ------------------------------------------------------ */
-
-    #schedule() {
+    /**
+     * Internal polling loop.
+     */
+    async #schedule() {
 
         if (!this.running) {
-
             return;
+        }
+
+        try {
+
+            await this.#processBatch();
+
+        } catch (error) {
+
+            this.logger.error?.(
+                "[OutboxWorker] Batch processing failed.",
+                error
+            );
+
+        } finally {
+
+            if (this.running) {
+
+                this.timer = setTimeout(
+                    () => this.#schedule(),
+                    this.pollIntervalMs
+                );
+
+            }
 
         }
 
-        this.timer = setTimeout(
+    }
 
-            async () => {
+    /**
+     * Processes a batch of pending events.
+     */
+    async #processBatch() {
 
-                try {
+        const events =
+            await this.outboxRepository.fetchAndLockPending(
+                this.batchSize,
+                this.maxRetries
+            );
 
-                    await this.#poll();
+        if (events.length === 0) {
+            return;
+        }
 
-                }
-
-                finally {
-
-                    if (this.running) {
-
-                        this.#schedule();
-
-                    }
-
-                }
-
-            },
-
-            this.pollIntervalMs
-
+        this.logger.info?.(
+            `[OutboxWorker] Processing ${events.length} event(s).`
         );
 
-    }
+        for (const event of events) {
 
-    /* ------------------------------------------------------ */
-    /* Poll                                                    */
-    /* ------------------------------------------------------ */
-
-    async #poll() {
-
-        if (this.processing) {
-
-            return;
+            await this.#publish(event);
 
         }
 
-        this.processing = true;
+    }
+
+    /**
+     * Publishes a single event.
+     */
+    async #publish(event) {
 
         try {
 
-            const events =
-                await this.outboxRepository
-                    .fetchAndLockPending(
+            const payload =
+                typeof event.payload === "string"
+                    ? JSON.parse(event.payload)
+                    : event.payload;
 
-                        this.batchSize,
+            await this.eventBus.publish(
+                event.event_name,
+                payload
+            );
 
-                        this.maxRetries
-
-                    );
-
-            if (!events.length) {
-
-                return;
-
-            }
+            await this.outboxRepository.markAsDispatched(
+                event.id
+            );
 
             this.logger.info?.(
-
-                {
-
-                    count: events.length,
-
-                },
-
-                "Processing outbox batch."
-
+                `[OutboxWorker] Published ${event.event_name}.`
             );
 
-            for (const event of events) {
-
-                await this.#dispatch(event);
-
-            }
-
-        }
-
-        catch (error) {
+        } catch (error) {
 
             this.logger.error?.(
-
-                {
-
-                    error,
-
-                },
-
-                "OutboxWorker polling failed."
-
+                `[OutboxWorker] Failed publishing ${event.event_name}.`,
+                error
             );
 
-        }
-
-        finally {
-
-            this.processing = false;
-
-        }
-
-    }
-
-    /* ------------------------------------------------------ */
-    /* Dispatch                                                */
-    /* ------------------------------------------------------ */
-
-    async #dispatch(event) {
-
-        try {
-
-            await this.dispatcher.dispatch(event);
-
-            await this.outboxRepository
-                .markAsDispatched(
-                    event.id
-                );
-
-            this.logger.debug?.(
-
-                {
-
-                    eventId:
-                        event.id,
-
-                    eventName:
-                        event.eventName,
-
-                },
-
-                "Outbox event dispatched."
-
+            await this.outboxRepository.incrementRetry(
+                event.id,
+                error.message
             );
-
-        }
-
-        catch (error) {
-
-            this.logger.error?.(
-
-                {
-
-                    eventId:
-                        event.id,
-
-                    eventName:
-                        event.eventName,
-
-                    error,
-
-                },
-
-                "Outbox dispatch failed."
-
-            );
-
-            await this.outboxRepository
-                .incrementRetry(
-
-                    event.id,
-
-                    error.message
-
-                );
 
         }
 

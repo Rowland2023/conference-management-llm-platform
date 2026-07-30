@@ -1,6 +1,6 @@
 /**
  * @file domain/RefundStatus.js
- * @description Value Object representing the lifecycle of a refund.
+ * @description Immutable Value Object and State Machine governing refund lifecycle.
  */
 
 const STATES = Object.freeze({
@@ -12,163 +12,110 @@ const STATES = Object.freeze({
   REJECTED: "REJECTED",
 });
 
+const STATE_VALUES = Object.freeze(Object.values(STATES));
+
 const VALID_TRANSITIONS = Object.freeze({
-  [STATES.REQUESTED]: [
+  [STATES.REQUESTED]: Object.freeze([
     STATES.PENDING_APPROVAL,
     STATES.PROCESSING,
     STATES.REJECTED,
     STATES.FAILED,
-  ],
+  ]),
 
-  [STATES.PENDING_APPROVAL]: [
+  [STATES.PENDING_APPROVAL]: Object.freeze([
     STATES.PROCESSING,
     STATES.REJECTED,
     STATES.FAILED,
-  ],
+  ]),
 
-  [STATES.PROCESSING]: [
+  [STATES.PROCESSING]: Object.freeze([
     STATES.COMPLETED,
     STATES.FAILED,
-  ],
+  ]),
 
-  [STATES.COMPLETED]: [],
+  [STATES.COMPLETED]: Object.freeze([]),
 
-  [STATES.FAILED]: [
+  [STATES.FAILED]: Object.freeze([
     STATES.PROCESSING,
-  ],
+  ]),
 
-  [STATES.REJECTED]: [],
+  [STATES.REJECTED]: Object.freeze([]),
 });
 
-export class RefundStatus {
-
+export default class RefundStatus {
   constructor(value) {
-
-    if (!Object.values(STATES).includes(value)) {
-
+    if (!RefundStatus.isValid(value)) {
       throw new Error(
         `[RefundStatus] Invalid refund status "${value}".`
       );
-
     }
 
     this.value = value;
 
     Object.freeze(this);
-
   }
 
-  /**
-   * Factory methods
-   */
-
-  static get REQUESTED() {
-    return new RefundStatus(STATES.REQUESTED);
-  }
-
-  static get PENDING_APPROVAL() {
-    return new RefundStatus(STATES.PENDING_APPROVAL);
-  }
-
-  static get PROCESSING() {
-    return new RefundStatus(STATES.PROCESSING);
-  }
-
-  static get COMPLETED() {
-    return new RefundStatus(STATES.COMPLETED);
-  }
-
-  static get FAILED() {
-    return new RefundStatus(STATES.FAILED);
-  }
-
-  static get REJECTED() {
-    return new RefundStatus(STATES.REJECTED);
-  }
-
-  /**
-   * Construct from persisted value.
-   */
+  /* ------------------------------------------------------------------ */
+  /* Factory Methods                                                    */
+  /* ------------------------------------------------------------------ */
 
   static from(value) {
-    return new RefundStatus(value);
+    return value instanceof RefundStatus
+      ? value
+      : new RefundStatus(value);
   }
 
-  /**
-   * Returns every valid state.
-   */
+  static isValid(value) {
+    return STATE_VALUES.includes(value);
+  }
 
   static values() {
-    return Object.values(STATES);
+    return [...STATE_VALUES];
   }
 
-  /**
-   * Determines whether this status can transition.
-   */
+  /* ------------------------------------------------------------------ */
+  /* State Machine                                                      */
+  /* ------------------------------------------------------------------ */
 
   canTransitionTo(nextStatus) {
-
-    const target =
+    const next =
       nextStatus instanceof RefundStatus
         ? nextStatus.value
         : nextStatus;
 
-    const allowed =
-      VALID_TRANSITIONS[this.value] ?? [];
-
-    return allowed.includes(target);
-
+    return (
+      VALID_TRANSITIONS[this.value] ?? []
+    ).includes(next);
   }
-
-  /**
-   * Returns a new status after validation.
-   */
 
   transitionTo(nextStatus) {
-
-    const target =
+    const next =
       nextStatus instanceof RefundStatus
         ? nextStatus.value
         : nextStatus;
 
-    if (!this.canTransitionTo(target)) {
-
+    if (!this.canTransitionTo(next)) {
       throw new Error(
-        `[RefundStatus] Invalid transition from "${this.value}" to "${target}".`
+        `[RefundStatus] Invalid transition from "${this.value}" to "${next}".`
       );
-
     }
 
-    return new RefundStatus(target);
-
+    return new RefundStatus(next);
   }
 
-  /**
-   * Whether the refund can no longer change state.
-   */
-
   isTerminal() {
-
-    return [
-
-      STATES.COMPLETED,
-
-      STATES.REJECTED,
-
-    ].includes(this.value);
-
+    return (
+      this.value === STATES.COMPLETED ||
+      this.value === STATES.REJECTED
+    );
   }
 
   equals(other) {
-
-    if (!(other instanceof RefundStatus)) {
-
-      return false;
-
-    }
-
-    return this.value === other.value;
-
+    return (
+      other instanceof RefundStatus
+        ? this.value === other.value
+        : this.value === other
+    );
   }
 
   toString() {
@@ -178,7 +125,37 @@ export class RefundStatus {
   toJSON() {
     return this.value;
   }
-
 }
 
-export default RefundStatus;
+/* -------------------------------------------------------------------- */
+/* Static Enum Constants                                                */
+/* -------------------------------------------------------------------- */
+
+Object.defineProperties(RefundStatus, {
+  REQUESTED: {
+    value: STATES.REQUESTED,
+    enumerable: true,
+  },
+  PENDING_APPROVAL: {
+    value: STATES.PENDING_APPROVAL,
+    enumerable: true,
+  },
+  PROCESSING: {
+    value: STATES.PROCESSING,
+    enumerable: true,
+  },
+  COMPLETED: {
+    value: STATES.COMPLETED,
+    enumerable: true,
+  },
+  FAILED: {
+    value: STATES.FAILED,
+    enumerable: true,
+  },
+  REJECTED: {
+    value: STATES.REJECTED,
+    enumerable: true,
+  },
+});
+
+Object.freeze(RefundStatus);

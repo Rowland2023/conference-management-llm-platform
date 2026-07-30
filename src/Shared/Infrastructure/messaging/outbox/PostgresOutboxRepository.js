@@ -1,94 +1,172 @@
-// src/shared/infrastructure/messaging/outbox/PostgresOutboxRepository.js
+/**
+ * @file src/shared/infrastructure/messaging/outbox/PostgresOutboxRepository.js
+ * @description Transactional Outbox Repository (Knex Implementation)
+ */
 
 export class PostgresOutboxRepository {
-  constructor({ knex }) {
-    if (!knex) {
-      throw new Error(
-        "PostgresOutboxRepository requires a Knex instance."
-      );
+
+    /**
+     * @param {Object} params
+     * @param {import("knex").Knex} params.db
+     */
+    constructor({ db }) {
+
+        if (!db) {
+            throw new Error(
+                "PostgresOutboxRepository requires a Knex instance."
+            );
+        }
+
+        this.db = db;
+        this.table = "outbox_events";
+
     }
 
-    this.knex = knex;
-  }
+    /**
+     * Persist one or more domain events.
+     *
+     * IMPORTANT:
+     * This MUST execute inside the same database transaction
+     * that persists the aggregate.
+     */
+    async save(events, trx = this.db) {
 
-  /**
-   * Save events inside an existing transaction.
-   */
-  async save(events, trx) {
-    const db = trx || this.knex;
+        const items =
+            Array.isArray(events)
+                ? events
+                : [events];
 
-    const list = Array.isArray(events)
-      ? events
-      : [events];
+        const rows = items.map((event) => {
 
-    const rows = list.map(event => ({
-      id: event.metadata.eventId,
-      event_name: event.metadata.eventName,
-      aggregate_id: event.metadata.aggregateId,
-      event_version: event.metadata.eventVersion,
-      correlation_id: event.metadata.correlationId,
-      causation_id: event.metadata.causationId,
-      payload: JSON.stringify(event.payload),
-      status: "PENDING",
-      retry_count: 0,
-      occurred_at: event.metadata.occurredAt
-    }));
+            const metadata = event.metadata ?? {};
 
-    await db("outbox_events").insert(rows);
-  }
+            return {
 
-  /**
-   * Fetch pending events.
-   */
-  async fetchAndLockPending(batchSize, maxRetries) {
-    return this.knex.transaction(async trx => {
+                id: metadata.eventId,
 
-      const rows = await trx("outbox_events")
-        .where("status", "PENDING")
-        .where("retry_count", "<", maxRetries)
-        .orderBy("occurred_at")
-        .limit(batchSize)
-        .forUpdate()
-        .skipLocked();
+                event_name: metadata.eventName,
 
-      if (rows.length === 0) {
-        return [];
-      }
+                aggregate_id: metadata.aggregateId,
 
-      const ids = rows.map(r => r.id);
+                event_version: metadata.eventVersion,
 
-      await trx("outbox_events")
-        .whereIn("id", ids)
-        .update({
-          status: "PROCESSING"
+                correlation_id: metadata.correlationId,
+
+                causation_id: metadata.causationId,
+
+                payload: JSON.stringify(event.payload),
+
+                status: "PENDING",
+
+                retry_count: 0,
+
+                occurred_at: metadata.occurredAt,
+
+            };
+
         });
 
-      return rows;
-    });
-  }
+        await trx(this.table).insert(rows);
 
-  /**
-   * Mark dispatched.
-   */
-  async markAsDispatched(id) {
-    await this.knex("outbox_events")
-      .where({ id })
-      .update({
-        status: "DISPATCHED",
-        processed_at: this.knex.fn.now()
-      });
-  }
+    }
 
-  /**
-   * Retry.
-   */
-  async incrementRetry(id, errorMessage) {
-    await this.knex("outbox_events")
-      .where({ id })
-      .increment("retry_count", 1)
-      .update({
-        status: "PENDING",
-        last_error: errorMessage
-      });
-  }
+    /**
+     * Fetch a batch of pending events
+     * and lock them for processing.
+     */
+    async fetchAndLockPending(
+        batchSize = 100,
+        maxRetries = 5,
+    ) {
+
+        return this.db.transaction(async (trx) => {
+
+            const rows =
+                await trx(this.table)
+                    .where("status", "PENDING")
+                    .where("retry_count", "<", maxRetries)
+                    .orderBy("occurred_at")
+                    .limit(batchSize)
+                    .forUpdate()
+                    .skipLocked();
+
+            if (rows.length === 0) {
+                return [];
+            }
+
+            await trx(this.table)
+                .whereIn(
+                    "id",
+                    rows.map(row => row.id),
+                )
+                .update({
+                    status: "PROCESSING",
+                });
+
+            return rows;
+
+        });
+
+    }
+
+    /**
+     * Mark event successfully dispatched.
+     */
+    async markAsDispatched(id) {
+
+        await this.db(this.table)
+            .where({ id })
+            .update({
+
+                status: "DISPATCHED",
+
+                processed_at: this.db.fn.now(),
+
+            });
+
+    }
+
+    /**
+     * Increment retry counter.
+     */
+    async incrementRetry(
+        id,
+        errorMessage,
+    ) {
+
+        await this.db(this.table)
+            .where({ id })
+            .increment("retry_count", 1)
+            .update({
+
+                status: "PENDING",
+
+                last_error: errorMessage,
+
+            });
+
+    }
+
+    /**
+     * Mark event permanently failed.
+     */
+    async markAsFailed(
+        id,
+        errorMessage,
+    ) {
+
+        await this.db(this.table)
+            .where({ id })
+            .update({
+
+                status: "FAILED",
+
+                last_error: errorMessage,
+
+                processed_at: this.db.fn.now(),
+
+            });
+
+    }
+
 }

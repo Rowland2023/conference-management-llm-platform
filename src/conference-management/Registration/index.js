@@ -31,9 +31,7 @@ export function createConferenceRegistrationSubModule({ db, logger, config }) {
   // 3. Infrastructure - Local UoW binding
   const registrationRepository = new RegistrationRepository({ uow });
   const conferenceRepository = new ConferenceRepository({ uow });
-  const outboxRepository = new PostgresOutboxRepository({
-  knex: db,
-});
+  const outboxRepository = new PostgresOutboxRepository({ uow });
 
   // 4. Application Use Cases
   const createRegistrationUseCase = new CreateRegistrationUseCase({

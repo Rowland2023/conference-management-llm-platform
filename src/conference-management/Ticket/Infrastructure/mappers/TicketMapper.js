@@ -1,50 +1,40 @@
-// src/conference-management/ticket/infrastructure/mappers/TicketMapper.js
+// src/modules/ticket/infrastructure/persistence/mappers/TicketMapper.js
 
 import { Ticket } from "../../domain/entities/Ticket.js";
 import { Money } from "../../domain/valueObjects/Money.js";
 
 export class TicketMapper {
-  /**
-   * Maps a PostgreSQL row to a domain entity.
-   */
-  toDomain(row) {
-    if (!row) return null;
-
+  static toDomain(model) {
     return Ticket.rehydrate({
-      id: row.id,
-      conferenceId: row.conference_id,
-      type: row.type,
+      id: model.id,
+      conferenceId: model.conferenceId,
+      type: model.type,
       price: new Money(
-        row.price_amount,
-        row.price_currency
+        model.priceAmount,
+        model.priceCurrency
       ),
-      capacity: row.capacity,
-      reserved: row.reserved,
-      sold: row.sold,
-      status: row.status,
-      version: row.version,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
+      capacity: model.capacity,
+      reserved: model.reserved,
+      sold: model.sold,
+      status: model.status,
+      version: model.version,
+      createdAt: model.createdAt,
+      updatedAt: model.updatedAt
     });
   }
 
-  /**
-   * Maps a domain entity to a PostgreSQL row.
-   */
-  toPersistence(ticket) {
+  static toPersistence(ticket) {
     return {
       id: ticket.id,
-      conference_id: ticket.conferenceId,
+      conferenceId: ticket.conferenceId,
       type: ticket.type,
-      price_amount: ticket.price.amount,
-      price_currency: ticket.price.currency,
+      priceAmount: ticket.price.amount,
+      priceCurrency: ticket.price.currency,
       capacity: ticket.capacity,
       reserved: ticket.reserved,
       sold: ticket.sold,
       status: ticket.status,
-      version: ticket.version,
-      created_at: ticket.createdAt,
-      updated_at: ticket.updatedAt,
+      version: ticket.version
     };
   }
 }

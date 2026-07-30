@@ -1,29 +1,13 @@
 // src/shared/domain/error/DomainErrors.js
 
-/**
- * Base class for all domain-level errors.
- * The domain is transport-agnostic and therefore contains
- * no HTTP-specific concepts such as status codes.
- */
 export class DomainError extends Error {
-  constructor(
-    message,
-    {
-      code = "DOMAIN_ERROR",
-      metadata = {},
-      cause,
-    } = {}
-  ) {
+  constructor(message, { code = "DOMAIN_ERROR", statusCode = 500, cause } = {}) {
     super(message, { cause });
 
-    this.name = new.target.name;
+    this.name = this.constructor.name;
     this.code = code;
-    this.metadata = Object.freeze({ ...metadata });
+    this.statusCode = statusCode;
     this.isOperational = true;
-
-    Error.captureStackTrace?.(this, new.target);
-
-    Object.freeze(this);
   }
 
   toJSON() {
@@ -31,128 +15,76 @@ export class DomainError extends Error {
       name: this.name,
       code: this.code,
       message: this.message,
-      metadata: this.metadata,
     };
   }
 }
 
-/**
- * Invalid input or malformed value object.
- */
-export class ValidationError extends DomainError {
-  constructor(message, options = {}) {
+export class DomainValidationError extends DomainError {
+  constructor(message, code = "VALIDATION_FAILED", cause) {
     super(message, {
-      code: "VALIDATION_ERROR",
-      ...options,
+      code,
+      statusCode: 422,
+      cause,
     });
   }
 }
 
 /**
- * Aggregate invariant violated.
+ * Domain invariant violation
+ * Aggregate rules violated
  */
-export class InvariantViolationError extends DomainError {
-  constructor(message, options = {}) {
+export class DomainInvariantError extends DomainValidationError {
+  constructor(message, cause) {
+    super(message, "DOMAIN_INVARIANT_VIOLATION", cause);
+  }
+}
+
+export class BusinessRuleValidationError extends DomainError {
+  constructor(message, code = "BUSINESS_RULE_VIOLATION", cause) {
     super(message, {
-      code: "INVARIANT_VIOLATION",
-      ...options,
+      code,
+      statusCode: 400,
+      cause,
     });
   }
 }
 
-/**
- * Valid input but violates a business rule.
- */
-export class BusinessRuleViolationError extends DomainError {
-  constructor(message, options = {}) {
-    super(message, {
-      code: "BUSINESS_RULE_VIOLATION",
-      ...options,
-    });
-  }
-}
-
-/**
- * Aggregate or entity not found.
- */
-export class NotFoundError extends DomainError {
-  constructor(message, options = {}) {
-    super(message, {
-      code: "NOT_FOUND",
-      ...options,
-    });
-  }
-}
-
-/**
- * Duplicate resource.
- */
-export class DuplicateResourceError extends DomainError {
-  constructor(message, options = {}) {
-    super(message, {
-      code: "DUPLICATE_RESOURCE",
-      ...options,
-    });
-  }
-}
-
-/**
- * Illegal lifecycle transition.
- */
-export class InvalidStateTransitionError extends DomainError {
-  constructor(message, options = {}) {
-    super(message, {
-      code: "INVALID_STATE_TRANSITION",
-      ...options,
-    });
-  }
-}
-
-/**
- * Optimistic concurrency conflict.
- */
-export class ConcurrencyConflictError extends DomainError {
-  constructor(message, options = {}) {
-    super(message, {
-      code: "CONCURRENCY_CONFLICT",
-      ...options,
-    });
-  }
-}
-
-/**
- * Authorization failure within the domain.
- */
-export class AuthorizationError extends DomainError {
-  constructor(message, options = {}) {
-    super(message, {
-      code: "AUTHORIZATION_ERROR",
-      ...options,
-    });
-  }
-}
-
-/**
- * Event payload could not be deserialized.
- */
 export class EventDeserializationError extends DomainError {
-  constructor(message, options = {}) {
+  constructor(message, cause) {
     super(message, {
       code: "EVENT_DESERIALIZATION_ERROR",
-      ...options,
+      statusCode: 400,
+      cause,
     });
   }
 }
 
-// -----------------------------------------------------------------------------
-// Backward compatibility aliases
-// Remove these after the codebase has been fully migrated.
-// -----------------------------------------------------------------------------
+export class NotFoundError extends DomainError {
+  constructor(message, code = "NOT_FOUND", cause) {
+    super(message, {
+      code,
+      statusCode: 404,
+      cause,
+    });
+  }
+}
 
-export class DomainValidationError extends ValidationError {}
+export class UnauthorizedError extends DomainError {
+  constructor(message, code = "UNAUTHORIZED", cause) {
+    super(message, {
+      code,
+      statusCode: 403,
+      cause,
+    });
+  }
+}
 
-export class DomainInvariantError extends InvariantViolationError {}
-
-export class BusinessRuleValidationError extends BusinessRuleViolationError {}
-
-export class UnauthorizedError extends AuthorizationError {}
+export class ConcurrencyConflictError extends DomainError {
+  constructor(message, code = "CONCURRENCY_CONFLICT", cause) {
+    super(message, {
+      code,
+      statusCode: 409,
+      cause,
+    });
+  }
+}

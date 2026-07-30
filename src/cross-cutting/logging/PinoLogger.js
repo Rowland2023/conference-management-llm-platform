@@ -1,6 +1,6 @@
-// shared/infrastructure/logging/PinoLogger.js
+
 import pino from 'pino';
-import { ILogger } from '../../application/ILogger.js';
+import { ILogger } from './ILogger.js';
 
 export class PinoLogger extends ILogger {
   constructor(opts = {}) {

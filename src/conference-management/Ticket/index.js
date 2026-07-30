@@ -1,6 +1,7 @@
 // src/conference-management/ticket/index.js
 
 // Infrastructure
+import { TicketModelDefine } from "./infrastructure/schemas/TicketModel.js";
 import { TicketMapper } from "./infrastructure/mappers/TicketMapper.js";
 import { PostgresTicketRepository } from "./infrastructure/repository/PostgresTicketRepository.js";
 import { PostgresOutboxRepository } from "../../shared/infrastructure/messaging/outbox/PostgresOutboxRepository.js";
@@ -15,58 +16,54 @@ import { createTicketRouter } from "./api/ticket.route.js";
 
 export function createTicketModule({
   db,
+  sequelize,
   transactionManager,
-  logger,
+  logger
 }) {
-  if (!db) {
+  const database = db ?? sequelize;
+
+  if (!database) {
     throw new Error(
       "TicketModule requires a database connection."
     );
   }
 
-  const unitOfWork =
-    transactionManager ?? new UnitOfWork(db);
+  const uow = transactionManager ?? new UnitOfWork(database);
 
-  /* -------------------------------------------------------------------------- */
-  /* Infrastructure                                                              */
-  /* -------------------------------------------------------------------------- */
+  // Models
+
+  const TicketModel = TicketModelDefine(database);
+
+  // Infrastructure
 
   const ticketMapper = new TicketMapper();
 
   const ticketRepository = new PostgresTicketRepository({
-  knex: db,
-  mapper: ticketMapper,
-  unitOfWork: unitOfWork,
-});
+    model: TicketModel,
+    mapper: ticketMapper,
+    transactionManager: uow
+  });
 
-  const outboxRepository =
-    new PostgresOutboxRepository({
-      knex: db,
-    });
+  const outboxRepository = new PostgresOutboxRepository({
+    uow
+  });
 
-  /* -------------------------------------------------------------------------- */
-  /* Application                                                                  */
-  /* -------------------------------------------------------------------------- */
+  // Application
 
-  const ticketCommandService =
-    new TicketCommandService({
-      ticketRepository,
-      outboxRepository,
-      unitOfWork,
-      logger,
-    });
+  const ticketCommandService = new TicketCommandService({
+    ticketRepository,
+    outboxRepository,
+    unitOfWork: uow,
+    logger
+  });
 
-  /* -------------------------------------------------------------------------- */
-  /* Presentation                                                                 */
-  /* -------------------------------------------------------------------------- */
+  // Presentation
 
-  const ticketController =
-    new TicketController({
-      ticketCommandService,
-    });
+  const ticketController = new TicketController({
+    ticketCommandService
+  });
 
-  const router =
-    createTicketRouter(ticketController);
+  const router = getTicketRoutes(ticketController);
 
   const subscriptions = [];
 
@@ -79,44 +76,46 @@ export function createTicketModule({
         return;
       }
 
+      //
+      // Payment failed
+      //
+
       subscriptions.push(
         eventBus.subscribe(
           "payment.failed",
           async ({
             ticketId,
             reason,
-            correlationId,
+            correlationId
           }) => {
+
             if (!ticketId) return;
 
             try {
               await ticketCommandService.releaseTicket({
                 ticketId,
-                reason:
-                  reason ?? "PAYMENT_FAILED",
-                correlationId,
+                reason: reason ?? "PAYMENT_FAILED",
+                correlationId
               });
 
-              logger?.info(
-                {
-                  ticketId,
-                  correlationId,
-                },
-                "Released reserved ticket."
-              );
+              logger?.info({
+                ticketId,
+                correlationId
+              }, "Released reserved ticket.");
             } catch (err) {
-              logger?.error(
-                {
-                  err,
-                  ticketId,
-                  correlationId,
-                },
-                "Unable to release reserved ticket."
-              );
+              logger?.error({
+                err,
+                ticketId,
+                correlationId
+              }, "Unable to release reserved ticket.");
             }
           }
         )
       );
+
+      //
+      // Payment succeeded
+      //
 
       subscriptions.push(
         eventBus.subscribe(
@@ -124,33 +123,28 @@ export function createTicketModule({
           async ({
             ticketId,
             paymentReference,
-            correlationId,
+            correlationId
           }) => {
+
             if (!ticketId) return;
 
             try {
               await ticketCommandService.confirmPurchase({
                 ticketId,
                 paymentReference,
-                correlationId,
+                correlationId
               });
 
-              logger?.info(
-                {
-                  ticketId,
-                  correlationId,
-                },
-                "Ticket purchase confirmed."
-              );
+              logger?.info({
+                ticketId,
+                correlationId
+              }, "Ticket purchase confirmed.");
             } catch (err) {
-              logger?.error(
-                {
-                  err,
-                  ticketId,
-                  correlationId,
-                },
-                "Unable to confirm ticket purchase."
-              );
+              logger?.error({
+                err,
+                ticketId,
+                correlationId
+              }, "Unable to confirm ticket purchase.");
             }
           }
         )
@@ -162,6 +156,7 @@ export function createTicketModule({
     },
 
     async stop(eventBus) {
+
       if (eventBus?.unsubscribe) {
         for (const token of subscriptions) {
           eventBus.unsubscribe(token);
@@ -169,6 +164,6 @@ export function createTicketModule({
       }
 
       logger?.info("Ticket module stopped.");
-    },
+    }
   };
 }

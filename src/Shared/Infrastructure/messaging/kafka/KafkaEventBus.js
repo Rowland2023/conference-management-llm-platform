@@ -1,6 +1,6 @@
 /**
  * @file src/shared/infrastructure/messaging/kafka/KafkaEventBus.js
- * @description Event Bus facade powering domain event publishing and event subscriptions.
+ * @description Kafka-backed Event Bus for publishing and subscribing to domain events.
  */
 
 import { KafkaProducer } from "./KafkaProducer.js";
@@ -8,28 +8,18 @@ import { KafkaConsumer } from "./KafkaConsumer.js";
 import RequestContext from "../../../../cross-cutting/context/request-context.js";
 
 export class KafkaEventBus {
-
-  /**
-   * @param {Object} params
-   * @param {KafkaConnection} params.kafkaConnection
-   * @param {string} params.groupId
-   * @param {Object} [params.logger]
-   */
   constructor(params = {}) {
-
     const {
       kafkaConnection,
       groupId,
       logger = console,
     } = params;
 
-
     if (!kafkaConnection) {
       throw new Error(
-        "KafkaEventBus requires a valid KafkaConnection instance."
+        "KafkaEventBus requires 'kafkaConnection'."
       );
     }
-
 
     if (typeof kafkaConnection.getKafkaInstance !== "function") {
       throw new Error(
@@ -37,17 +27,13 @@ export class KafkaEventBus {
       );
     }
 
-
     if (!groupId || typeof groupId !== "string") {
       throw new Error(
-        "KafkaEventBus requires a valid consumer groupId."
+        "KafkaEventBus requires a valid 'groupId'."
       );
     }
 
-
-    const kafka =
-      kafkaConnection.getKafkaInstance();
-
+    const kafka = kafkaConnection.getKafkaInstance();
 
     if (!kafka) {
       throw new Error(
@@ -55,62 +41,39 @@ export class KafkaEventBus {
       );
     }
 
-
-    this.kafkaConnection = kafkaConnection;
-    this.kafka = kafka;
-    this.groupId = groupId;
     this.logger = logger;
-
     this.handlersMap = new Map();
 
-    this.producer =
-      new KafkaProducer({
+    this.producer = new KafkaProducer({
+      kafka,
+      logger,
+    });
 
-        kafka,
-
-        logger,
-
-      });
-
-    this.consumer =
-      new KafkaConsumer({
-
-        kafka,
-
-        groupId,
-
-        logger,
-
-      });
-
+    this.consumer = new KafkaConsumer({
+      kafka,
+      groupId,
+      logger,
+    });
   }
 
   /**
    * Connect producer.
    */
   async initialize() {
-
     await this.producer.connect();
-
   }
+
   /**
-   * Publish event.
+   * Publish domain event.
    */
   async publish(topic, event) {
-
     if (!topic) {
-      throw new Error(
-        "Topic is required."
-      );
+      throw new Error("Topic is required.");
     }
-
 
     if (!event) {
-      throw new Error(
-        "Event is required."
-      );
+      throw new Error("Event is required.");
     }
-
 
     const correlationId =
       RequestContext.getCorrelationId?.();
@@ -118,117 +81,74 @@ export class KafkaEventBus {
     const tenantId =
       RequestContext.getTenantId?.();
 
-
     const partitionKey =
-      event.aggregateId
+      event.aggregateId != null
         ? String(event.aggregateId)
-        : event.id
+        : event.id != null
           ? String(event.id)
           : null;
 
+    await this.producer.publish(topic, [
+      {
+        key: partitionKey,
 
-    const message = {
+        value: {
+          eventId: event.eventId ?? event.id,
+          eventType: topic,
+          occurredOn:
+            event.occurredOn ??
+            new Date().toISOString(),
+          payload:
+            event.payload ?? event,
+        },
 
-      key:
-        partitionKey,
+        headers: {
+          ...(correlationId && {
+            "x-correlation-id": correlationId,
+          }),
 
-      value: {
-
-        eventId:
-          event.eventId ||
-          event.id,
-
-        eventType:
-          topic,
-
-        occurredOn:
-          event.occurredOn ||
-          new Date().toISOString(),
-
-        payload:
-          event.payload || event,
-
+          ...(tenantId && {
+            "x-tenant-id": tenantId,
+          }),
+        },
       },
-
-      headers: {
-
-        ...(correlationId && {
-          "x-correlation-id":
-            correlationId,
-        }),
-
-        ...(tenantId && {
-          "x-tenant-id":
-            tenantId,
-        }),
-
-      },
-
-    };
-
-
-    await this.producer.publish(
-
-      topic,
-
-      [message]
-
-    );
-
+    ]);
   }
 
   /**
    * Register subscriber.
    */
-  subscribe({
-    topic,
-    eventType,
-    handler,
-}){
-
-    if (!topic) {
+  subscribe(topic, handler) {
+    if (!topic || typeof topic !== "string") {
       throw new Error(
-        "Topic is required."
+        "subscribe() requires a valid topic."
       );
     }
-
 
     if (typeof handler !== "function") {
       throw new Error(
-        "Subscriber must be a function."
+        "subscribe() requires a handler function."
       );
     }
 
+    const handlers =
+      this.handlersMap.get(topic) ?? [];
 
-    if (!this.handlersMap.has(topic)) {
+    handlers.push(handler);
 
-      this.handlersMap.set(
+    this.handlersMap.set(
+      topic,
+      handlers
+    );
 
-        topic,
-
-        []
-
-      );
-
-    }
-
-
-    this.handlersMap
-      .get(topic)
-      .push(handler);
-
+    // Return unsubscribe token
+    return handler;
   }
-
-
-
-
-
 
   /**
    * Remove subscriber.
    */
   unsubscribe(topic, handler) {
-
     const handlers =
       this.handlersMap.get(topic);
 
@@ -236,70 +156,66 @@ export class KafkaEventBus {
       return;
     }
 
-    const filtered =
+    const remaining =
       handlers.filter(
         h => h !== handler
       );
 
-    if (filtered.length === 0) {
-
+    if (remaining.length === 0) {
       this.handlersMap.delete(topic);
-
       return;
     }
 
     this.handlersMap.set(
       topic,
-      filtered
+      remaining
     );
-
   }
 
-
-
-
-
-
   /**
-   * Begin consuming.
+   * Start consuming all subscribed topics.
    */
   async startConsuming() {
-
-    const topics =
-      [...this.handlersMap.keys()];
-
+    const topics = [
+      ...this.handlersMap.keys(),
+    ];
 
     if (topics.length === 0) {
-
       this.logger.warn?.(
         "KafkaEventBus started with no subscriptions."
       );
-
       return;
-
     }
 
+    this.logger.info?.({
+      message:
+        "Starting Kafka consumers.",
+      topics,
+    });
 
     await this.consumer.subscribe(
       topics
     );
 
-
     await this.consumer.start(
-
-      async ({ topic, payload, headers }) => {
+      async ({
+        topic,
+        payload,
+        headers,
+      }) => {
+        const handlers =
+          this.handlersMap.get(topic) ??
+          [];
 
         const correlationId =
-          headers?.["x-correlation-id"] ||
-          headers?.["x-request-id"] ||
+          headers?.["x-correlation-id"] ??
+          headers?.["x-request-id"] ??
           payload?.eventId;
 
         const tenantId =
           headers?.["x-tenant-id"];
 
-
         await RequestContext.run(
-
           {
             correlationId,
             tenantId,
@@ -307,68 +223,38 @@ export class KafkaEventBus {
           },
 
           async () => {
-
-            const handlers =
-              this.handlersMap.get(topic) || [];
-
-
             for (const handler of handlers) {
-
               try {
-
                 await handler(
                   payload,
                   headers
                 );
-
               } catch (error) {
-
-                this.logger.error?.(
-
-                  "Kafka event handler failed",
-
-                  {
-                    topic,
-                    eventId: payload?.eventId,
-                    error,
-                  }
-
-                );
+                this.logger.error?.({
+                  message:
+                    "Kafka handler failed.",
+                  topic,
+                  eventId:
+                    payload?.eventId,
+                  error,
+                });
 
                 throw error;
-
               }
-
             }
-
           }
-
         );
-
       }
-
     );
-
   }
-
-
-
-
-
 
   /**
    * Shutdown.
    */
   async shutdown() {
-
     await Promise.allSettled([
-
       this.producer.disconnect(),
-
       this.consumer.disconnect(),
-
     ]);
-
   }
-
 }

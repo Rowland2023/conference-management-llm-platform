@@ -1,105 +1,163 @@
-import 'dotenv/config';
-import { createApp } from './app.js';
+import "dotenv/config";
+
+import { createApp } from "./app.js";
+
 import {
   verifyDatabaseConnection,
   closeDatabaseConnection,
-} from './cross-cutting/database/knex.js'; // Fixed: hyphenated path matching disk
+} from "./cross-cutting/database/knex.js";
 
-const PORT = process.env.PORT || 3000;
-const SHUTDOWN_TIMEOUT_MS = 10_000;
+const PORT = Number(process.env.PORT) || 3000;
+const SHUTDOWN_TIMEOUT = 10_000;
+
+const logger = console;
 
 let server = null;
-let appInstance = null;
-let isShuttingDown = false;
+let application = null;
+let shuttingDown = false;
 
-/**
- * Gracefully shuts down the application.
- */
-async function shutdown(signal) {
-  if (isShuttingDown) return;
-  isShuttingDown = true;
+/* -------------------------------------------------------------------------- */
+/* Bootstrap                                                                   */
+/* -------------------------------------------------------------------------- */
 
-  console.log(`\n${signal} received. Starting graceful shutdown...`);
+async function bootstrap() {
+  try {
+    await verifyInfrastructure();
 
-  const forceExitTimeout = setTimeout(() => {
-    console.error(
-      `❌ Shutdown timed out (${SHUTDOWN_TIMEOUT_MS}ms). Forcing exit.`
+    application = await createApp({
+      logger,
+    });
+
+    await application.start();
+
+    server = await startHttpServer(application.app);
+
+    logger.info(
+      `🚀 Conference Management API listening on http://localhost:${PORT}`
     );
+  } catch (error) {
+    logger.error("❌ Failed to start application.");
+    logger.error(error);
+
     process.exit(1);
-  }, SHUTDOWN_TIMEOUT_MS);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Infrastructure                                                               */
+/* -------------------------------------------------------------------------- */
+
+async function verifyInfrastructure() {
+  await verifyDatabaseConnection();
+
+  logger.info("📡 Database connected successfully.");
+}
+
+/* -------------------------------------------------------------------------- */
+/* HTTP Server                                                                  */
+/* -------------------------------------------------------------------------- */
+
+function startHttpServer(app) {
+  return new Promise((resolve, reject) => {
+    const httpServer = app.listen(PORT);
+
+    httpServer.once("listening", () => {
+      resolve(httpServer);
+    });
+
+    httpServer.once("error", reject);
+  });
+}
+
+function stopHttpServer() {
+  if (!server) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    server.close(error => {
+      if (error) {
+        return reject(error);
+      }
+
+      logger.info("✅ HTTP server stopped.");
+
+      resolve();
+    });
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/* Graceful Shutdown                                                            */
+/* -------------------------------------------------------------------------- */
+
+async function shutdown(signal) {
+  if (shuttingDown) {
+    return;
+  }
+
+  shuttingDown = true;
+
+  logger.info(`\n${signal} received. Starting graceful shutdown...`);
+
+  const timeout = setTimeout(() => {
+    logger.error(
+      `❌ Shutdown exceeded ${SHUTDOWN_TIMEOUT}ms. Forcing exit.`
+    );
+
+    process.exit(1);
+  }, SHUTDOWN_TIMEOUT);
 
   try {
-    // 1. Stop accepting new HTTP requests
-    if (server) {
-      await new Promise((resolve, reject) => {
-        server.close((err) => (err ? reject(err) : resolve()));
-      });
-      console.log('✅ HTTP server stopped.');
+    await stopHttpServer();
+
+    if (application?.stop) {
+      await application.stop();
+
+      logger.info("✅ Application stopped.");
     }
 
-    // 2. Stop background workers, outbox publishers & event bus consumers
-    if (appInstance?.stop) {
-      await appInstance.stop();
-      console.log('✅ Background workers stopped.');
-    }
-
-    // 3. Close database connection pool
     await closeDatabaseConnection();
-    console.log('✅ Database connection pool closed.');
 
-    clearTimeout(forceExitTimeout);
+    logger.info("✅ Database connection closed.");
+
+    clearTimeout(timeout);
+
     process.exit(0);
   } catch (error) {
-    console.error('❌ Error during shutdown:', error);
-    clearTimeout(forceExitTimeout);
+    clearTimeout(timeout);
+
+    logger.error("❌ Shutdown failed.");
+    logger.error(error);
+
     process.exit(1);
   }
 }
 
-/**
- * Process lifecycle handlers
- */
-process.once('SIGINT', () => shutdown('SIGINT'));
-process.once('SIGTERM', () => shutdown('SIGTERM'));
+/* -------------------------------------------------------------------------- */
+/* Process Events                                                               */
+/* -------------------------------------------------------------------------- */
 
-process.on('uncaughtException', (error) => {
-  console.error('❌ Uncaught Exception:', error);
-  shutdown('uncaughtException');
+process.once("SIGINT", () => shutdown("SIGINT"));
+
+process.once("SIGTERM", () => shutdown("SIGTERM"));
+
+process.once("uncaughtException", error => {
+  logger.error("❌ Uncaught Exception");
+  logger.error(error);
+
+  shutdown("uncaughtException");
 });
 
-process.on('unhandledRejection', (reason) => {
-  console.error('❌ Unhandled Rejection:', reason);
-  shutdown('unhandledRejection');
+process.once("unhandledRejection", reason => {
+  logger.error("❌ Unhandled Rejection");
+  logger.error(reason);
+
+  shutdown("unhandledRejection");
 });
 
-/**
- * Application bootstrap.
- */
-async function start() {
-  try {
-    // Verify database connection before building composition root
-    await verifyDatabaseConnection();
-    console.log('📡 Database connected successfully.');
+/* -------------------------------------------------------------------------- */
+/* Start Application                                                            */
+/* -------------------------------------------------------------------------- */
 
-    // Build composition root & wire dependencies
-    appInstance = await createApp();
-
-    // Start background services & outbox daemons
-    if (appInstance.start) {
-      await appInstance.start();
-    }
-
-    // Start HTTP server
-    server = appInstance.app.listen(PORT, () => {
-      console.log(
-        `🚀 Conference Management API running on http://localhost:${PORT}`
-      );
-    });
-  } catch (error) {
-    console.error('❌ Failed to start application.');
-    console.error(error);
-    process.exit(1);
-  }
-}
-
-start();
+bootstrap();
