@@ -1,4 +1,4 @@
- // src/bootstrap/lifecycle.js
+// src/bootstrap/lifecycle.js
 
 export function bootstrapLifecycle({
     infrastructure,
@@ -7,11 +7,32 @@ export function bootstrapLifecycle({
 }) {
 
     const {
-        eventBus,
         kafkaConnection,
+        eventBus,
         outboxWorker,
     } = infrastructure;
 
+    async function invoke(
+        target,
+        method,
+        message,
+        ...args
+    ) {
+
+        if (
+            target &&
+            typeof target[method] === "function"
+        ) {
+
+            await target[method](...args);
+
+            if (message) {
+                logger.info(message);
+            }
+
+        }
+
+    }
 
     async function start() {
 
@@ -19,87 +40,58 @@ export function bootstrapLifecycle({
             "Starting application lifecycle..."
         );
 
+        //
+        // Infrastructure
+        //
+
+        await invoke(
+            kafkaConnection,
+            "initialize",
+            "Kafka connection initialized."
+        );
+
+        await invoke(
+            eventBus,
+            "initialize",
+            "Event bus initialized."
+        );
+
+        await invoke(
+            eventBus,
+            "startConsuming",
+            "Event consumers started."
+        );
 
         //
-        // Infrastructure startup
+        // IMPORTANT:
+        // Only the application lifecycle starts
+        // the shared Transactional Outbox worker.
         //
 
-        if (
-            kafkaConnection &&
-            typeof kafkaConnection.initialize === "function"
-        ) {
-
-            await kafkaConnection.initialize();
-
-            logger.info(
-                "Kafka connection initialized."
-            );
-        }
-
-
-        if (
-            eventBus &&
-            typeof eventBus.initialize === "function"
-        ) {
-
-            await eventBus.initialize();
-
-            logger.info(
-                "Event bus initialized."
-            );
-        }
-
-
-        if (
-            eventBus &&
-            typeof eventBus.startConsuming === "function"
-        ) {
-
-            await eventBus.startConsuming();
-
-            logger.info(
-                "Event consumers started."
-            );
-        }
-
-
-        if (
-            outboxWorker &&
-            typeof outboxWorker.start === "function"
-        ) {
-
-            await outboxWorker.start();
-
-            logger.info(
-                "Outbox worker started."
-            );
-        }
-
+        await invoke(
+            outboxWorker,
+            "start",
+            "Outbox worker started."
+        );
 
         //
-        // Domain modules startup
+        // Modules
         //
 
         for (const module of modules) {
 
-            if (
-                module &&
-                typeof module.start === "function"
-            ) {
-
-                await module.start();
-
-            }
+            await invoke(
+                module,
+                "start"
+            );
 
         }
-
 
         logger.info(
             "Application started successfully."
         );
+
     }
-
-
 
     async function stop() {
 
@@ -107,64 +99,42 @@ export function bootstrapLifecycle({
             "Stopping application lifecycle..."
         );
 
-
         //
         // Stop modules first
         //
 
-        for (
-            const module of [...modules].reverse()
-        ) {
+        for (const module of [...modules].reverse()) {
 
-            if (
-                module &&
-                typeof module.stop === "function"
-            ) {
-
-                await module.stop(eventBus);
-
-            }
+            await invoke(
+                module,
+                "stop",
+                null,
+                eventBus
+            );
 
         }
 
-
         //
-        // Stop background workers
-        //
-
-        if (
-            outboxWorker &&
-            typeof outboxWorker.stop === "function"
-        ) {
-
-            await outboxWorker.stop();
-
-        }
-
-
-        //
-        // Stop messaging infrastructure
+        // Infrastructure
         //
 
-        if (
-            eventBus &&
-            typeof eventBus.shutdown === "function"
-        ) {
+        await invoke(
+            outboxWorker,
+            "stop",
+            "Outbox worker stopped."
+        );
 
-            await eventBus.shutdown();
+        await invoke(
+            eventBus,
+            "shutdown",
+            "Event bus stopped."
+        );
 
-        }
-
-
-        if (
-            kafkaConnection &&
-            typeof kafkaConnection.shutdown === "function"
-        ) {
-
-            await kafkaConnection.shutdown();
-
-        }
-
+        await invoke(
+            kafkaConnection,
+            "shutdown",
+            "Kafka connection closed."
+        );
 
         logger.info(
             "Application stopped successfully."
@@ -172,9 +142,9 @@ export function bootstrapLifecycle({
 
     }
 
-
     return {
         start,
         stop,
     };
+
 }
