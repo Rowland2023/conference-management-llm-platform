@@ -12,26 +12,19 @@ export function bootstrapRoutes({
         );
     }
 
-
     for (const module of modules) {
 
-        if (!module) {
+        if (!module?.router) {
             continue;
         }
 
+        app.use(module.router);
 
-        if (!module.router) {
-
-            logger.warn(
-                "Module does not expose router. Skipping."
-            );
-
-            continue;
-        }
-
-
-        app.use(
-            module.router
+        logger.info?.(
+            {
+                router: module.router?.mountPath ?? "<dynamic>",
+            },
+            "Module router registered."
         );
 
     }
