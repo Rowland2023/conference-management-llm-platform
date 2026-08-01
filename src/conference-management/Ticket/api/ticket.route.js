@@ -1,47 +1,77 @@
-// src/modules/ticket/api/ticket.route.js
-import { Router } from 'express';
-import { idempotency } from "../../../shared/infrastructure/middleware/idempotency.js";
+import { Router } from "express";
+
+import { authenticate } from "../../authentication/presentation/middleware/authenticate.js";
+
 import { correlationIdMiddleware } from "../../../shared/infrastructure/middleware/correlationId.js";
+import { idempotency } from "../../../shared/infrastructure/middleware/idempotency.js";
+import { validate } from "../../../shared/infrastructure/middleware/validate.js";
 
-/**
- * Ticket module HTTP router factory
- * 
- * All routes require X-Correlation-Id header for audit trail.
- * Mutating routes require Idempotency-Key to prevent double-booking.
- * 
- * @param {TicketController} ticketController
- * @returns {Router}
- */
+import {
+    createTicketSchema,
+    ticketIdSchema,
+    reserveTicketSchema,
+    releaseTicketSchema,
+    cancelTicketSchema,
+    ticketQuerySchema,
+} from "./validators/ticket.schema.js";
+
 export function createTicketRouter(ticketController) {
-  const router = Router();
+    const router = Router();
 
-  // Apply correlation ID to all routes
-  router.use(correlationIdMiddleware);
+    // Cross-cutting middleware
+    router.use(correlationIdMiddleware);
+    router.use(authenticate);
 
-  // Commands - mutating operations
-  router.post('/', 
-    idempotency,
-    (req, res, next) => ticketController.createTicket(req, res, next)
-  );
-  
-  router.post('/:id/reserve',
-    idempotency,
-    (req, res, next) => ticketController.reserveTicket(req, res, next)
-  );
-  
-  router.post('/:id/release',
-    idempotency,
-    (req, res, next) => ticketController.releaseTicket(req, res, next)
-  );
-  
-  router.post('/:id/cancel',
-    idempotency,
-    (req, res, next) => ticketController.cancelTicket(req, res, next)
-  );
+    // Helper to preserve controller context
+    const handler = (method) => (req, res, next) =>
+        ticketController[method](req, res, next);
 
-  // Queries - read operations
-  router.get('/', (req, res, next) => ticketController.listTickets(req, res, next));
-  router.get('/:id', (req, res, next) => ticketController.getTicketById(req, res, next));
+    // Commands
 
-  return router;
+    router.post(
+        "/",
+        idempotency,
+        validate(createTicketSchema, "body"),
+        handler("createTicket")
+    );
+
+    router.post(
+        "/:id/reserve",
+        idempotency,
+        validate(ticketIdSchema, "params"),
+        validate(reserveTicketSchema, "body"),
+        handler("reserveTicket")
+    );
+
+    router.post(
+        "/:id/release",
+        idempotency,
+        validate(ticketIdSchema, "params"),
+        validate(releaseTicketSchema, "body"),
+        handler("releaseTicket")
+    );
+
+    router.post(
+        "/:id/cancel",
+        idempotency,
+        validate(ticketIdSchema, "params"),
+        validate(cancelTicketSchema, "body"),
+        handler("cancelTicket")
+    );
+
+    // Queries
+
+    router.get(
+        "/",
+        validate(ticketQuerySchema, "query"),
+        handler("listTickets")
+    );
+
+    router.get(
+        "/:id",
+        validate(ticketIdSchema, "params"),
+        handler("getTicketById")
+    );
+
+    return router;
 }

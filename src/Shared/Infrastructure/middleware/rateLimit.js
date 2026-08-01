@@ -1,76 +1,63 @@
-import expressRateLimit from "express-rate-limit";
+import expressRateLimit, {
+    ipKeyGenerator,
+} from "express-rate-limit";
 
-/**
- * Wrap express-rate-limit so it doesn't crash when unit tests
- * provide partial/mock Express response objects.
- */
-const createSafeLimiter = (options) => {
-  const limiter = expressRateLimit({
-    standardHeaders: true,
-    legacyHeaders: false,
-    ...options,
-  });
 
-  return (req, res, next) => {
-    const safeRes = res || {
-      headersSent: false,
-      setHeader: () => {},
-      getHeader: () => {},
-    };
+function createSafeLimiter(options = {}) {
 
-    if (typeof safeRes.headersSent === "undefined") {
-      safeRes.headersSent = false;
-    }
+    return expressRateLimit({
 
-    const safeNext =
-      typeof next === "function"
-        ? next
-        : (err) => {
-            if (err) throw err;
-          };
+        standardHeaders: true,
 
-    return limiter(req, safeRes, safeNext);
-  };
-};
+        legacyHeaders: false,
 
-/**
- * Factory for creating route-specific rate limiters.
- *
- * Example:
- * rateLimit({ max: 10, windowMs: 60_000 })
- */
-export function rateLimit(options = {}) {
-  return createSafeLimiter(options);
+
+        ...options,
+
+
+        keyGenerator(req) {
+
+            return (
+                req.user?.id ||
+                ipKeyGenerator(req.ip)
+            );
+
+        },
+
+    });
+
 }
 
-/**
- * General API limiter.
- */
-export const standardRateLimiter = createSafeLimiter({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: {
-    success: false,
-    error: {
-      code: "RATE_LIMIT_EXCEEDED",
-      message:
-        "Too many requests from this IP, please try again after 15 minutes.",
-    },
-  },
-});
 
-/**
- * Sensitive operations.
- */
-export const strictRateLimiter = createSafeLimiter({
-  windowMs: 60 * 60 * 1000,
-  max: 10,
-  message: {
-    success: false,
-    error: {
-      code: "STRICT_RATE_LIMIT_EXCEEDED",
-      message:
-        "Too many sensitive requests from this IP, please try again later.",
-    },
-  },
-});
+
+export function rateLimit(options = {}) {
+
+    return createSafeLimiter(options);
+
+}
+
+
+
+export const standardRateLimiter =
+    createSafeLimiter({
+
+        windowMs:
+            15 * 60 * 1000,
+
+        max:
+            100,
+
+    });
+
+
+
+export const strictRateLimiter =
+    createSafeLimiter({
+
+        windowMs:
+            60 * 60 * 1000,
+
+        max:
+            10,
+
+    });

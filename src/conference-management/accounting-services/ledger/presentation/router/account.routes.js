@@ -3,31 +3,35 @@ import express from "express";
 import { validate } from "../../../../../shared/infrastructure/middleware/validate.js";
 import { authGuard } from "../../../../../shared/infrastructure/middleware/authGuard.js";
 import {
-  createAccountSchema,
-  getAccountBalanceSchema,
+    createAccountSchema,
+    getAccountBalanceSchema,
 } from "../validators/account.validator.js";
 
 export default function createAccountRoutes(accountController) {
-  const router = express.Router();
+    const router = express.Router();
 
-  router.use(authMiddleware); // req.actor set
+    // Authenticate every account endpoint
+    router.use(authGuard);
 
-  router.post(
-    "/",
-    validate(createAccountSchema),
-    accountController.createAccount
-  );
+    // Create account
+    router.post(
+        "/",
+        validate(createAccountSchema, "body"),
+        accountController.createAccount
+    );
 
-  router.get(
-    "/:id/balance",
-    validate(getAccountBalanceSchema),
-    accountController.getBalance
-  );
+    // Get account balance
+    router.get(
+        "/:id/balance",
+        validate(getAccountBalanceSchema, "params"),
+        accountController.getBalance
+    );
 
-  router.get(
-    "/",
-    accountController.listAccounts
-  ); // TODO
+    // List accounts
+    router.get(
+        "/",
+        accountController.listAccounts
+    );
 
-  return router;
+    return router;
 }

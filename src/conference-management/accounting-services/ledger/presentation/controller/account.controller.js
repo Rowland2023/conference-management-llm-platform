@@ -1,64 +1,180 @@
 /**
- * @file src/presentation/controllers/account.controller.js
+ * Account HTTP Controller
  *
- * Account HTTP Controller handling account lifecycle and balance query orchestration.
+ * Handles account lifecycle operations.
  */
 
 import AccountSerializer from "../serializers/account.serializer.js";
 
+
 export default class AccountController {
-  constructor({
-    createAccountUseCase,
-    getAccountBalanceUseCase,
-  }) {
-    this.createAccountUseCase = createAccountUseCase;
-    this.getAccountBalanceUseCase = getAccountBalanceUseCase;
-  }
 
-  /**
-   * Handles HTTP POST /accounts
-   * Uses arrow syntax to preserve class instance binding during Express router delegation.
-   */
-  createAccount = async (req, res, next) => {
-    try {
-      // Enforce tenant boundary from authenticated actor context
-      const commandPayload = {
-        ...req.body,
-        tenantId: req.actor.tenantId,
-        createdBy: req.actor.id,
-      };
+    constructor({
+        createAccountUseCase,
+        getAccountBalanceUseCase,
+        listAccountsUseCase,
+    }) {
 
-      const account =
-        await this.createAccountUseCase.execute(commandPayload);
+        this.createAccountUseCase =
+            createAccountUseCase;
 
-      return res.status(201).json({
-        success: true,
-        data: AccountSerializer.serialize(account),
-      });
-    } catch (err) {
-      next(err);
+        this.getAccountBalanceUseCase =
+            getAccountBalanceUseCase;
+
+        this.listAccountsUseCase =
+            listAccountsUseCase;
+
     }
-  };
 
-  /**
-   * Handles HTTP GET /accounts/:id/balance
-   */
-  getBalance = async (req, res, next) => {
-    try {
-      const queryPayload = {
-        id: req.params.id,
-        tenantId: req.actor.tenantId,
-      };
 
-      const account =
-        await this.getAccountBalanceUseCase.execute(queryPayload);
+    /**
+     * POST /accounts
+     */
+    createAccount = async (req, res, next) => {
 
-      return res.status(200).json({
-        success: true,
-        data: AccountSerializer.serialize(account),
-      });
-    } catch (err) {
-      next(err);
-    }
-  };
+        try {
+
+            const command = {
+
+                ...req.body,
+
+                tenantId:
+                    req.actor?.tenantId,
+
+                createdBy:
+                    req.actor?.id,
+
+            };
+
+
+            const account =
+                await this.createAccountUseCase.execute(
+                    command
+                );
+
+
+            return res
+                .status(201)
+                .json({
+
+                    success: true,
+
+                    data:
+                        AccountSerializer.serialize(
+                            account
+                        ),
+
+                });
+
+
+        } catch(error){
+
+            next(error);
+
+        }
+
+    };
+
+
+
+    /**
+     * GET /accounts/:id/balance
+     */
+    getBalance = async (req,res,next)=>{
+
+        try {
+
+
+            const query = {
+
+                id:
+                    req.params.id,
+
+                tenantId:
+                    req.actor?.tenantId,
+
+            };
+
+
+            const balance =
+                await this.getAccountBalanceUseCase.execute(
+                    query
+                );
+
+
+            return res.json({
+
+                success:true,
+
+                data:
+                    AccountSerializer.serialize(
+                        balance
+                    ),
+
+            });
+
+
+        } catch(error){
+
+            next(error);
+
+        }
+
+    };
+
+
+
+    /**
+     * GET /accounts
+     */
+    listAccounts = async(req,res,next)=>{
+
+        try {
+
+
+            if(!this.listAccountsUseCase){
+
+                return res.status(501).json({
+
+                    success:false,
+
+                    message:
+                        "Account listing not implemented"
+
+                });
+
+            }
+
+
+            const accounts =
+                await this.listAccountsUseCase.execute({
+
+                    tenantId:
+                        req.actor?.tenantId,
+
+                });
+
+
+
+            return res.json({
+
+                success:true,
+
+                data:
+                    accounts.map(
+                        AccountSerializer.serialize
+                    ),
+
+            });
+
+
+        } catch(error){
+
+            next(error);
+
+        }
+
+    };
+
+
 }
