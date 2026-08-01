@@ -2,7 +2,7 @@
 
 import { randomUUID } from "crypto";
 
-import knex from "../../../src/bootstrap/database/knex.js";
+import knex from "../../../bootstrap/infrastructure.js";
 import { ConferenceRepository } from "../../../src/conference-management/event-schedule/infrastructure/repositories/ConferenceRepository.js";
 import { Conference } from "../../../src/conference-management/event-schedule/domain/entities/Conference.js";
 

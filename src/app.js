@@ -12,29 +12,44 @@ import { config } from "./config/index.js";
 
 import { PinoLogger } from "./cross-cutting/logging/PinoLogger.js";
 
-
 const defaultLogger = new PinoLogger();
-
 
 export async function createApp({
     logger = defaultLogger,
 } = {}) {
 
-
-    console.log(
-        "APP LOGGER:",
-        logger.constructor.name,
-        typeof logger.child
-    );
-
-
     const app = express();
 
-    app.use(express.json({
-        limit: "1mb",
-    }));
+    app.use(
+        express.json({
+            limit: "1mb",
+        })
+    );
+    
+    //
+// Health Check
+//
+app.get(
+    "/health",
+    (req, res) => {
 
+        res.status(200).json({
 
+            status: "ok",
+
+            service:
+                "conference-management",
+
+            timestamp:
+                new Date().toISOString(),
+
+        });
+
+    }
+);
+    //
+    // 1. Bootstrap Infrastructure
+    //
     const infrastructure =
         bootstrapInfrastructure({
             db,
@@ -42,38 +57,44 @@ export async function createApp({
             logger,
         });
 
+    //
     
+    // 3. Compose Shared Dependency Container
+    //
+    const shared = {
+        ...infrastructure,
+
+    };
+
+    //
+    // 4. Bootstrap Feature Modules
+    //
     const modules =
-        await bootstrapModules({
-            ...infrastructure,
-            logger,
-        });
+        await bootstrapModules(shared);
 
-
+    //
+    // 5. Register Routes
+    //
     bootstrapRoutes({
         app,
         modules,
-        infrastructure,
-        logger,
+        logger: shared.logger,
     });
 
-
+    //
+    // 6. Bootstrap Lifecycle
+    //
     const lifecycle =
         bootstrapLifecycle({
             modules,
-            infrastructure,
-            logger,
+            infrastructure: shared,
+            logger: shared.logger,
         });
 
-
     return {
-
         app,
-
         start: lifecycle.start,
-
         stop: lifecycle.stop,
-
     };
 
 }

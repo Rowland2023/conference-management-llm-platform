@@ -1,25 +1,77 @@
-import { Router } from 'express';
-// Assuming the path to your controller instance or class
-// If using an DI container, you'll pass the resolved instance here
+import { Router } from "express";
+
+import { authenticate } from "../../authentication/presentation/middleware/authenticate.js";
+
+import { validate } from "../../../shared/infrastructure/middleware/validate.js";
+import { correlationIdMiddleware } from "../../../shared/infrastructure/middleware/correlationId.js";
+import { idempotency } from "../../../shared/infrastructure/middleware/idempotency.js";
+
+import {
+    notificationIdSchema,
+    notificationQuerySchema,
+    sendEmailSchema,
+    sendSmsSchema,
+    sendPushSchema,
+    updateNotificationSchema,
+} from "./validators/notification.schema.js";
 
 export function createNotificationRouter(notificationController) {
-  const router = Router();
 
-  // 1. Get all notifications (Queries: pagination, filters)
-  router.get('/', (req, res, next) => notificationController.list(req, res, next));
+    const router = Router();
 
-  // 2. Get a single notification by ID
-  router.get('/:id', (req, res, next) => notificationController.get(req, res, next));
+    // Cross-cutting middleware
+    router.use(correlationIdMiddleware);
+    router.use(authenticate);
 
-  // 3. Send/Trigger specific notification types (POST actions)
-  router.post('/email', (req, res, next) => notificationController.sendEmail(req, res, next));
-  router.post('/sms', (req, res, next) => notificationController.sendSMS(req, res, next));
-  router.post('/push', (req, res, next) => notificationController.sendPush(req, res, next));
+    // Queries
 
-  // 4. Update and Delete management routes
-  router.put('/:id', (req, res, next) => notificationController.update(req, res, next));
-  router.delete('/:id', (req, res, next) => notificationController.delete(req, res, next));
+    router.get(
+        "/",
+        validate(notificationQuerySchema, "query"),
+        notificationController.list
+    );
 
-  return router;
+    router.get(
+        "/:id",
+        validate(notificationIdSchema, "params"),
+        notificationController.get
+    );
+
+    // Commands
+
+    router.post(
+        "/email",
+        idempotency,
+        validate(sendEmailSchema, "body"),
+        notificationController.sendEmail
+    );
+
+    router.post(
+        "/sms",
+        idempotency,
+        validate(sendSmsSchema, "body"),
+        notificationController.sendSMS
+    );
+
+    router.post(
+        "/push",
+        idempotency,
+        validate(sendPushSchema, "body"),
+        notificationController.sendPush
+    );
+
+    router.put(
+        "/:id",
+        validate(notificationIdSchema, "params"),
+        validate(updateNotificationSchema, "body"),
+        notificationController.update
+    );
+
+    router.delete(
+        "/:id",
+        validate(notificationIdSchema, "params"),
+        notificationController.delete
+    );
+
+    return router;
 }
-

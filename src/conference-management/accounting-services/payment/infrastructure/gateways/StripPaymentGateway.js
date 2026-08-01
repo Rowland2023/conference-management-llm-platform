@@ -1,3 +1,4 @@
+import Stripe from "stripe";
 export class StripePaymentGateway {
   constructor(apiKey,{ apiVersion, logger = console } = {}) {
     if (!apiKey) throw new Error('Stripe API Key required');

@@ -1,11 +1,87 @@
-export const authGuard = (req, res, next) => {
-    // TODO: Implement actual authentication logic (e.g., JWT verification)
-    const authHeader = req.headers.authorization;
-    
-    if (!authHeader) {
-        return res.status(401).json({ error: 'Unauthorized: No token provided' });
-    }
+/**
+ * Authentication / Authorization middleware factory
+ *
+ * Usage:
+ *
+ * router.use(authGuard());
+ *
+ * router.post(
+ *   "/admin",
+ *   authGuard("admin"),
+ *   controller.action
+ * );
+ */
 
-    // Pass through for now
-    next();
-};
+export function authGuard(requiredRole = null) {
+
+    return (req, res, next) => {
+
+        const authHeader =
+            req.headers?.authorization;
+
+
+        if (!authHeader) {
+
+            return res.status(401).json({
+
+                success: false,
+
+                error:
+                    "Unauthorized: No token provided",
+
+            });
+
+        }
+
+
+        /**
+         * TODO:
+         * Replace with JWT verification.
+         *
+         * Example:
+         *
+         * req.actor = {
+         *    id,
+         *    tenantId,
+         *    roles
+         * }
+         */
+
+
+        req.actor = {
+
+            id:
+                "system-user",
+
+            tenantId:
+                "system-tenant",
+
+            roles:
+                ["admin"],
+
+        };
+
+
+
+        if (
+            requiredRole &&
+            !req.actor.roles.includes(requiredRole)
+        ) {
+
+            return res.status(403).json({
+
+                success:false,
+
+                error:
+                    "Forbidden: insufficient permissions",
+
+            });
+
+        }
+
+
+        next();
+
+    };
+
+}

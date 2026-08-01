@@ -1,8 +1,24 @@
-import { KafkaConnection } from "../shared/infrastructure/messaging/kafka/KafkaConnection.js";
-import { KafkaEventBus } from "../shared/infrastructure/messaging/kafka/KafkaEventBus.js";
-import { OutboxWorker } from "../shared/infrastructure/messaging/outbox/OutboxWorker.js";
-import { PostgresOutboxRepository } from "../shared/infrastructure/messaging/outbox/PostgresOutboxRepository.js";
-import KnexUnitOfWork from "../cross-cutting/database/KnexUnitOfWork.js";
+// src/bootstrap/infrastructure.js
+
+import Redis from "ioredis";
+
+import { KafkaConnection } 
+    from "../shared/infrastructure/messaging/kafka/KafkaConnection.js";
+
+import { KafkaEventBus } 
+    from "../shared/infrastructure/messaging/kafka/KafkaEventBus.js";
+
+import { OutboxWorker } 
+    from "../shared/infrastructure/messaging/outbox/OutboxWorker.js";
+
+import { PostgresOutboxRepository } 
+    from "../shared/infrastructure/messaging/outbox/PostgresOutboxRepository.js";
+
+import KnexUnitOfWork 
+    from "../cross-cutting/database/KnexUnitOfWork.js";
+
+import { registerLockCommands } 
+    from "../shared/infrastructure/redis/registerLockCommands.js";
 
 
 export function bootstrapInfrastructure({
@@ -10,6 +26,27 @@ export function bootstrapInfrastructure({
     config,
     logger,
 }) {
+
+
+    // ======================================================
+    // Redis
+    // ======================================================
+
+    const redis =
+        new Redis({
+            host: config.redis.host,
+            port: config.redis.port,
+            password: config.redis.password,
+        });
+
+
+    registerLockCommands(redis);
+
+
+
+    // ======================================================
+    // Kafka
+    // ======================================================
 
     const kafkaConnection =
         new KafkaConnection({
@@ -27,11 +64,22 @@ export function bootstrapInfrastructure({
         });
 
 
-    const unitOfWorkFactory =
-        () => new KnexUnitOfWork({
-            knex: db,
-        });
 
+    // ======================================================
+    // Database
+    // ======================================================
+
+    const unitOfWorkFactory =
+        () =>
+            new KnexUnitOfWork({
+                knex: db,
+            });
+
+
+
+    // ======================================================
+    // Outbox
+    // ======================================================
 
     const outboxRepository =
         new PostgresOutboxRepository({
@@ -47,13 +95,27 @@ export function bootstrapInfrastructure({
         });
 
 
+
+    // ======================================================
+    // Shared Infrastructure
+    // ======================================================
+
     return {
+
         db,
+
+        redis,
+        config,
         unitOfWorkFactory,
+
         kafkaConnection,
+
         eventBus,
+
         outboxRepository,
+
         outboxWorker,
-        logger,   // <-- IMPORTANT
+
+        logger,
     };
 }

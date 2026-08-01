@@ -1,151 +1,215 @@
-/**
- * @file src/index.js
- *
- * Ledger Service Bootstrap
- *
- * Responsibilities:
- * - Load environment
- * - Build application container
- * - Start HTTP server
- * - Coordinate graceful shutdown
- *
- * Does NOT know:
- * - Database implementation
- * - Kafka implementation
- * - Repository details
- * - Business logic
- */
+// src/conference-management/accounting-services/ledger/index.js
 
-require('dotenv').config();
+import { Router } from "express";
 
-const buildContainer = require('./container');
-const createPresentationApp = require('./modules/ledger/presentation');
+import { PostgresAccountRepository }
+    from "./infrastructure/repositories/postgres-account.repository.js";
 
-async function bootstrap() {
-  let container;
-  let server;
-  let isShuttingDown = false;
+import { PostgresJournalEntryRepository }
+    from "./infrastructure/repositories/postgres-journal-entry.repository.js";
 
-  const shutdown = async (signal, error) => {
-    // 1. Prevent concurrent shutdown executions
-    if (isShuttingDown) return;
-    isShuttingDown = true;
+import { PostgresHoldRepository }
+    from "./infrastructure/repositories/postgres-hold.repository.js";
 
-    // Fallback console log in case container/logger didn't initialize
-    const activeLogger = container?.logger || console;
+import { CreateAccountUseCase }
+    from "./application/create-account.usecase.js";
 
-    if (activeLogger.warn) {
-      activeLogger.warn({ signal, error }, 'Graceful shutdown initiated');
-    } else {
-      console.warn(`Graceful shutdown initiated [${signal}]`, error || '');
-    }
+import { PostJournalEntryUseCase }
+    from "./application/post-journal-entry.usecase.js";
 
-    // 2. Force hard exit after 15-second timeout safeguard
-    const forceTimer = setTimeout(() => {
-      if (activeLogger.error) {
-        activeLogger.error('Graceful shutdown timeout exceeded. Forcefully exiting.');
-      }
-      process.exit(1);
-    }, 15000);
+import { ReverseJournalEntryUseCase }
+    from "./application/reverse-journal-entry.usecase.js";
 
-    // Unref timer so it doesn't hold the event loop open if everything closes smoothly
-    if (forceTimer.unref) forceTimer.unref();
+import { GetLedgerBalanceUseCase }
+    from "./application/get-ledger-balance.usecase.js";
 
-    try {
-      // 3. Stop accepting new HTTP traffic
-      if (server) {
-        await new Promise((resolve) => {
-          server.close(resolve);
+import { CreateHoldUseCase }
+    from "./application/create-hold.usecase.js";
+
+import AccountController
+    from "./presentation/controller/account.controller.js";
+
+import JournalController
+    from "./presentation/controller/journal.controller.js";
+
+import HoldController
+    from "./presentation/controller/hold.controller.js";
+
+import createAccountRoutes
+    from "./presentation/router/account.routes.js";
+
+import createJournalRoutes
+    from "./presentation/router/journal.routes.js";
+
+import createHoldRoutes
+    from "./presentation/router/hold.routes.js";
+
+
+export function createLedgerModule({
+    unitOfWorkFactory,
+    outboxRepository,
+    logger,
+}) {
+
+    const uow =
+        unitOfWorkFactory();
+
+
+    // ======================================================
+    // Repositories
+    // ======================================================
+
+    const accountRepository =
+        new PostgresAccountRepository({
+            uow,
         });
-      }
 
-      // 4. Teardown infra resources (DB pool, Kafka, Redis, Outbox relay)
-      if (container?.shutdown) {
-        await container.shutdown();
-      }
 
-      clearTimeout(forceTimer);
+    const journalRepository =
+        new PostgresJournalEntryRepository({
+            uow,
+        });
 
-      if (activeLogger.info) {
-        activeLogger.info('Ledger service shutdown completed cleanly');
-      }
 
-      // Explicit exit to prevent lingering handle hangs
-      process.exit(error ? 1 : 0);
-    } catch (shutdownError) {
-      clearTimeout(forceTimer);
+    const holdRepository =
+        new PostgresHoldRepository({
+            uow,
+        });
 
-      if (activeLogger.error) {
-        activeLogger.error({ shutdownError }, 'Graceful shutdown failed');
-      } else {
-        console.error('Graceful shutdown failed', shutdownError);
-      }
 
-      process.exit(1);
-    }
-  };
 
-  try {
-    /**
-     * 1. Build Dependency Graph
-     */
-    container = await buildContainer();
-    const { logger } = container;
+    // ======================================================
+    // Use Cases
+    // ======================================================
 
-    logger.info(
-      { service: 'ledger', environment: process.env.NODE_ENV },
-      'Ledger container initialized'
+    const createAccountUseCase =
+        new CreateAccountUseCase({
+            accountRepository,
+            outboxRepository,
+            uow,
+            logger,
+        });
+
+
+    const postJournalEntryUseCase =
+        new PostJournalEntryUseCase({
+            journalRepository,
+            accountRepository,
+            outboxRepository,
+            uow,
+            logger,
+        });
+
+
+    const reverseJournalEntryUseCase =
+        new ReverseJournalEntryUseCase({
+            journalRepository,
+            accountRepository,
+            outboxRepository,
+            uow,
+            logger,
+        });
+
+
+    const getLedgerBalanceUseCase =
+        new GetLedgerBalanceUseCase({
+            accountRepository,
+            logger,
+        });
+
+
+    const createHoldUseCase =
+        new CreateHoldUseCase({
+            holdRepository,
+            accountRepository,
+            outboxRepository,
+            uow,
+            logger,
+        });
+
+
+
+    // ======================================================
+    // Controllers
+    // ======================================================
+
+    const accountController =
+        new AccountController({
+            createAccountUseCase,
+            getAccountBalanceUseCase:
+                getLedgerBalanceUseCase,
+        });
+
+
+    const journalController =
+        new JournalController({
+            postJournalEntryUseCase,
+            reverseJournalEntryUseCase,
+        });
+
+
+    const holdController =
+        new HoldController({
+            createHoldUseCase,
+        });
+
+
+
+    // ======================================================
+    // Router
+    // ======================================================
+
+    const router =
+        Router();
+
+
+    router.use(
+        "/accounts",
+        createAccountRoutes(accountController)
     );
 
-    /**
-     * 2. Verify Infrastructure & Warm Pools
-     */
-    await container.startup();
 
-    /**
-     * 3. Create HTTP Application
-     */
-    const app = createPresentationApp({
-      accountController: container.accountController,
-      journalController: container.journalController,
-      holdController: container.holdController,
-      logger,
-    });
+    router.use(
+        "/journals",
+        createJournalRoutes(journalController)
+    );
 
-    /**
-     * 4. Start HTTP Server
-     */
-    const port = Number(process.env.PORT || 3000);
 
-    server = app.listen(port, () => {
-      logger.info(
-        { port, environment: process.env.NODE_ENV },
-        'Ledger HTTP server started'
-      );
-    });
+    router.use(
+        "/holds",
+        createHoldRoutes(holdController)
+    );
 
-    server.on('error', (error) => {
-      logger.error({ error }, 'HTTP server runtime failure');
-      shutdown('server_error', error);
-    });
 
-    /**
-     * 5. Process Lifecycle Traps
-     */
-    process.on('SIGTERM', () => shutdown('SIGTERM'));
-    process.on('SIGINT', () => shutdown('SIGINT'));
-    process.on('uncaughtException', (error) => shutdown('uncaughtException', error));
-    process.on('unhandledRejection', (reason) => shutdown('unhandledRejection', reason));
 
-  } catch (error) {
-    console.error('Fatal bootstrap failure:', error);
+    // ======================================================
+    // Public Module API
+    // ======================================================
 
-    if (container?.shutdown) {
-      await container.shutdown().catch(() => {});
-    }
+    return {
 
-    process.exit(1);
-  }
+        name: "ledger",
+
+        router,
+
+        controllers: {
+            accountController,
+            journalController,
+            holdController,
+        },
+
+        repositories: {
+            accountRepository,
+            journalRepository,
+            holdRepository,
+        },
+
+        useCases: {
+            createAccountUseCase,
+            postJournalEntryUseCase,
+            reverseJournalEntryUseCase,
+            getLedgerBalanceUseCase,
+            createHoldUseCase,
+        },
+    };
 }
-
-bootstrap();

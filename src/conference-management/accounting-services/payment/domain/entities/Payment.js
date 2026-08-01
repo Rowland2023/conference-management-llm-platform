@@ -1,10 +1,10 @@
 // src/modules/payment/domain/Payment.js
-import { AggregateRoot } from "../../../../shared/domain/AggregateRoot.js";
+import { AggregateRoot } from "../../../../../shared/domain/AggregateRoot.js";
 import { Money } from "../value-objects/Money.js";
 import { PaymentStatus } from "../value-objects/PaymentStatus.js";
 import { PaymentCreatedEvent } from "../events/PaymentCreatedEvent.js";
 import { PaymentSuccessfulEvent } from "../events/PaymentSuccessfulEvent.js";
-import { PaymentReleasedEvent } from "./events/PaymentReleasedEvent.js";
+import { PaymentReleasedEvent } from "../events/PaymentReleasedEvent.js";
 import { ValidationError, UnprocessableEntityError } from "../errors/PaymentErrors.js";
 
 export class Payment extends AggregateRoot {

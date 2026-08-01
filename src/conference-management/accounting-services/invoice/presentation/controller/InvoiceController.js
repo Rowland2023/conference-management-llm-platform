@@ -1,5 +1,6 @@
 // modules/invoicing/presentation/InvoiceController.js
-import { CreateInvoiceRequest } from '../application/dtos/CreateInvoiceRequest.js';
+import { CreateInvoiceRequest }
+  from "../dtos/CreateInvoiceRequest.js";
 
 export class InvoiceController {
   /**

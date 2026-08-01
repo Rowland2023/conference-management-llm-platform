@@ -2,39 +2,59 @@
 
 import { Router } from "express";
 
-export default function createEventRouter({
-    eventController,
-}) {
+import { authenticate } from "../../../authentication/presentation/middleware/authenticate.js";
+
+import { correlationIdMiddleware } from "../../../../shared/infrastructure/middleware/correlationId.js";
+import { validate } from "../../../../shared/infrastructure/middleware/validate.js";
+
+import {
+    createEventSchema,
+    eventIdSchema,
+    eventQuerySchema,
+    rescheduleEventSchema,
+} from "../validators/event.validators.js";
+
+export default function createEventRouter({ eventController }) {
     const router = Router();
 
-    const extractTracing = (req, res, next) => {
-        const correlationId =
-            req.headers["x-correlation-id"] ??
-            req.headers["x-request-id"];
+    // Cross-cutting middleware
+    router.use(correlationIdMiddleware);
+    router.use(authenticate);
 
-        const causationId =
-            req.headers["x-causation-id"] ?? null;
+    // Commands
 
-        if (correlationId) {
-            if (req.method === "GET" || req.method === "DELETE") {
-                req.query.correlationId = correlationId;
-                req.query.causationId = causationId;
-            } else {
-                req.body.correlationId = correlationId;
-                req.body.causationId = causationId;
-            }
-        }
+    router.post(
+        "/",
+        validate(createEventSchema, "body"),
+        eventController.createEvent
+    );
 
-        next();
-    };
+    router.patch(
+        "/:id/reschedule",
+        validate(eventIdSchema, "params"),
+        validate(rescheduleEventSchema, "body"),
+        eventController.rescheduleEvent
+    );
 
-    router.use(extractTracing);
+    router.delete(
+        "/:id",
+        validate(eventIdSchema, "params"),
+        eventController.cancelEvent
+    );
 
-    router.post("/", eventController.createEvent);
-    router.get("/", eventController.listEvents);
-    router.get("/:id", eventController.getEventById);
-    router.patch("/:id/reschedule", eventController.rescheduleEvent);
-    router.delete("/:id", eventController.cancelEvent);
+    // Queries
+
+    router.get(
+        "/",
+        validate(eventQuerySchema, "query"),
+        eventController.listEvents
+    );
+
+    router.get(
+        "/:id",
+        validate(eventIdSchema, "params"),
+        eventController.getEventById
+    );
 
     return router;
 }
