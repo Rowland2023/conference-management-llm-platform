@@ -20,10 +20,20 @@ import "dotenv/config";
 import { createApp } from "./app.js";
 
 
+const PORT =
+    Number(process.env.PORT ?? 3000);
+
+
+const SHUTDOWN_TIMEOUT =
+    15000;
+
+
+
 async function bootstrap() {
 
-    let application;
-    let server;
+    let application = null;
+
+    let server = null;
 
     let shuttingDown = false;
 
@@ -31,9 +41,11 @@ async function bootstrap() {
 
     async function shutdown(signal, error) {
 
+
         if (shuttingDown) {
             return;
         }
+
 
         shuttingDown = true;
 
@@ -64,7 +76,7 @@ async function bootstrap() {
                     process.exit(1);
 
                 },
-                15000
+                SHUTDOWN_TIMEOUT
             );
 
 
@@ -80,11 +92,15 @@ async function bootstrap() {
             //
             if (server) {
 
-                await new Promise(resolve => {
+                await new Promise(
+                    resolve => {
 
-                    server.close(resolve);
+                        server.close(
+                            resolve
+                        );
 
-                });
+                    }
+                );
 
             }
 
@@ -106,12 +122,14 @@ async function bootstrap() {
             );
 
 
+
             process.exit(
                 error ? 1 : 0
             );
 
 
-        } catch (shutdownError) {
+
+        } catch(shutdownError) {
 
 
             clearTimeout(forceTimer);
@@ -149,7 +167,8 @@ async function bootstrap() {
             app,
             start,
             logger = console,
-        } = application;
+        } =
+            application;
 
 
 
@@ -161,32 +180,21 @@ async function bootstrap() {
         //
         // Start application lifecycle
         //
-        if (start) {
-
-            await start();
-
-        }
+        await start?.();
 
 
 
         //
         // Start HTTP server
         //
-        const port =
-            Number(
-                process.env.PORT ?? 3000
-            );
-
-
-
         server =
             app.listen(
-                port,
+                PORT,
                 () => {
 
                     logger.info?.(
                         {
-                            port,
+                            port: PORT,
                         },
                         "Conference Management API started"
                     );
@@ -221,19 +229,19 @@ async function bootstrap() {
         //
         // Process lifecycle signals
         //
-        process.on(
+        process.once(
             "SIGTERM",
             () => shutdown("SIGTERM")
         );
 
 
-        process.on(
+        process.once(
             "SIGINT",
             () => shutdown("SIGINT")
         );
 
 
-        process.on(
+        process.once(
             "uncaughtException",
             error =>
                 shutdown(
@@ -243,7 +251,7 @@ async function bootstrap() {
         );
 
 
-        process.on(
+        process.once(
             "unhandledRejection",
             reason =>
                 shutdown(
