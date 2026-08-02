@@ -1,22 +1,23 @@
 // src/conference-management/ticket/index.js
 // Composition Root for Ticket Bounded Context
 
+
 // Infrastructure
 import { TicketModelDefine } from "./infrastructure/schemas/TicketModel.js";
 import { TicketMapper } from "./infrastructure/mappers/TicketMapper.js";
 import { PostgresTicketRepository } from "./infrastructure/repository/PostgresTicketRepository.js";
 
+
 // Application
 import { TicketCommandService } from "./application/commands/TicketCommandService.js";
+
 
 // Presentation
 import { TicketController } from "./api/ticket.controller.js";
 import { createTicketRouter } from "./api/ticket.route.js";
 
 
-/**
- * Composition Root for Ticket Module
- */
+
 export function createTicketModule({
     db,
     unitOfWorkFactory,
@@ -24,9 +25,6 @@ export function createTicketModule({
     logger,
 }) {
 
-    //----------------------------------------------------------
-    // Dependency Validation
-    //----------------------------------------------------------
 
     if (!db) {
         throw new Error(
@@ -34,11 +32,13 @@ export function createTicketModule({
         );
     }
 
+
     if (!unitOfWorkFactory) {
         throw new Error(
             "TicketModule: 'unitOfWorkFactory' is required."
         );
     }
+
 
     if (!outboxRepository) {
         throw new Error(
@@ -46,11 +46,13 @@ export function createTicketModule({
         );
     }
 
+
     if (!logger) {
         throw new Error(
             "TicketModule: 'logger' is required."
         );
     }
+
 
 
     //----------------------------------------------------------
@@ -75,15 +77,19 @@ export function createTicketModule({
 
     const ticketRepository =
         new PostgresTicketRepository({
+
             model: TicketModel,
+
             mapper: ticketMapper,
+
             transactionManager: uow,
+
         });
 
 
 
     //----------------------------------------------------------
-    // Application Services
+    // Application Service
     //----------------------------------------------------------
 
     const ticketCommandService =
@@ -102,36 +108,52 @@ export function createTicketModule({
 
 
     //----------------------------------------------------------
-    // HTTP Boundary
+    // HTTP Controller
     //----------------------------------------------------------
 
     const ticketController =
         new TicketController({
+
             ticketCommandService,
+
         });
+
 
 
     const router =
         createTicketRouter({
+
             ticketController,
+
         });
 
 
 
     //----------------------------------------------------------
-    // Event Subscription Lifecycle
+    // Event Lifecycle
     //----------------------------------------------------------
 
     const subscriptions = [];
 
 
+
     return {
+
+
+        /**
+         * REQUIRED BY bootstrap/routes.js
+         */
+        name: "ticket",
+
+        basePath: "/tickets",
 
 
         router,
 
 
+
         subscribe(eventBus) {
+
 
             if (!eventBus) {
 
@@ -149,6 +171,7 @@ export function createTicketModule({
 
                 eventBus.subscribe(
                     "payment.failed",
+
                     async (event) => {
 
                         const {
@@ -158,45 +181,59 @@ export function createTicketModule({
                         } = event;
 
 
+
                         if (!ticketId) {
                             return;
                         }
 
 
+
                         try {
 
                             await ticketCommandService.releaseTicket({
+
                                 ticketId,
+
                                 reason:
                                     reason ??
                                     "PAYMENT_FAILED",
+
                                 correlationId,
+
                             });
 
 
-                            logger.info(
-                                {
-                                    ticketId,
-                                    correlationId,
-                                },
-                                "Ticket released after payment failure."
+
+                            logger.info({
+
+                                ticketId,
+
+                                correlationId,
+
+                            },
+                            "Ticket released after payment failure."
                             );
 
 
                         } catch(error) {
 
-                            logger.error(
-                                {
-                                    error,
-                                    ticketId,
-                                    correlationId,
-                                },
-                                "Failed releasing ticket."
+
+                            logger.error({
+
+                                error,
+
+                                ticketId,
+
+                                correlationId,
+
+                            },
+                            "Failed releasing ticket."
                             );
 
                         }
 
                     }
+
                 )
 
             );
@@ -207,13 +244,20 @@ export function createTicketModule({
 
                 eventBus.subscribe(
                     "payment.succeeded",
-                    async (event) => {
+
+                    async(event)=>{
+
 
                         const {
+
                             ticketId,
+
                             paymentReference,
+
                             correlationId,
+
                         } = event;
+
 
 
                         if (!ticketId) {
@@ -221,47 +265,64 @@ export function createTicketModule({
                         }
 
 
+
                         try {
 
+
                             await ticketCommandService.confirmPurchase({
+
                                 ticketId,
+
                                 paymentReference,
+
                                 correlationId,
+
                             });
 
 
-                            logger.info(
-                                {
-                                    ticketId,
-                                    correlationId,
-                                },
-                                "Ticket purchase confirmed."
+
+                            logger.info({
+
+                                ticketId,
+
+                                correlationId,
+
+                            },
+                            "Ticket purchase confirmed."
                             );
 
 
                         } catch(error) {
 
-                            logger.error(
-                                {
-                                    error,
-                                    ticketId,
-                                    correlationId,
-                                },
-                                "Failed confirming ticket purchase."
+
+                            logger.error({
+
+                                error,
+
+                                ticketId,
+
+                                correlationId,
+
+                            },
+                            "Failed confirming ticket purchase."
                             );
+
 
                         }
 
+
                     }
+
                 )
 
             );
+
 
         },
 
 
 
-        async start() {
+        async start(){
 
             logger.info(
                 "Ticket module started."
@@ -271,15 +332,15 @@ export function createTicketModule({
 
 
 
-        async stop(eventBus) {
+        async stop(eventBus){
 
 
             if (
                 eventBus &&
                 typeof eventBus.unsubscribe === "function"
-            ) {
+            ){
 
-                for (const token of subscriptions) {
+                for(const token of subscriptions){
 
                     eventBus.unsubscribe(token);
 

@@ -20,117 +20,56 @@ import "dotenv/config";
 import { createApp } from "./app.js";
 
 
-async function bootstrap() {
+const PORT =
+    Number(process.env.PORT ?? 3000);
 
-    let application;
-    let server;
-
-    let shuttingDown = false;
-
+const SHUTDOWN_TIMEOUT =
+    15000;
 
 
-    async function shutdown(signal, error) {
-
-        if (shuttingDown) {
-            return;
-        }
-
-        shuttingDown = true;
-
-
-        const logger =
-            application?.logger ?? console;
+let application = null;
+let server = null;
+let shuttingDown = false;
 
 
 
-        logger.warn?.(
-            {
-                signal,
-                error,
-            },
-            "Graceful shutdown initiated"
-        );
+async function shutdown(signal, error) {
+
+    if (shuttingDown) {
+        return;
+    }
+
+    shuttingDown = true;
+
+
+    const logger =
+        application?.logger ?? console;
+
+
+    logger.warn?.(
+        {
+            signal,
+            error,
+        },
+        "Graceful shutdown initiated"
+    );
 
 
 
-        const forceTimer =
-            setTimeout(
-                () => {
-
-                    logger.error?.(
-                        "Shutdown timeout exceeded"
-                    );
-
-                    process.exit(1);
-
-                },
-                15000
-            );
-
-
-        forceTimer.unref?.();
-
-
-
-        try {
-
-
-            //
-            // Stop HTTP server
-            //
-            if (server) {
-
-                await new Promise(resolve => {
-
-                    server.close(resolve);
-
-                });
-
-            }
-
-
-
-            //
-            // Stop application lifecycle
-            //
-            await application?.stop?.();
-
-
-
-            clearTimeout(forceTimer);
-
-
-
-            logger.info?.(
-                "Application shutdown completed"
-            );
-
-
-            process.exit(
-                error ? 1 : 0
-            );
-
-
-        } catch (shutdownError) {
-
-
-            clearTimeout(forceTimer);
-
+    const timeout =
+        setTimeout(() => {
 
             logger.error?.(
-                {
-                    shutdownError,
-                },
-                "Application shutdown failed"
+                "Shutdown timeout exceeded"
             );
-
 
             process.exit(1);
 
-        }
+        }, SHUTDOWN_TIMEOUT);
 
-    }
 
+
+    timeout.unref?.();
 
 
 
@@ -138,8 +77,71 @@ async function bootstrap() {
 
 
         //
-        // Create application
+        // Stop HTTP server
         //
+        if (server) {
+
+            await new Promise(resolve => {
+
+                server.close(resolve);
+
+            });
+
+        }
+
+
+
+        //
+        // Stop application lifecycle
+        //
+        await application?.stop?.();
+
+
+
+        clearTimeout(timeout);
+
+
+
+        logger.info?.(
+            "Application shutdown completed"
+        );
+
+
+        process.exit(
+            error ? 1 : 0
+        );
+
+
+    } catch(shutdownError) {
+
+
+        clearTimeout(timeout);
+
+
+        logger.error?.(
+            {
+                shutdownError,
+            },
+            "Application shutdown failed"
+        );
+
+
+        process.exit(1);
+
+    }
+
+}
+
+
+
+
+
+async function bootstrap() {
+
+
+    try {
+
+
         application =
             await createApp();
 
@@ -161,32 +163,21 @@ async function bootstrap() {
         //
         // Start application lifecycle
         //
-        if (start) {
-
-            await start();
-
-        }
+        await start?.();
 
 
 
         //
         // Start HTTP server
         //
-        const port =
-            Number(
-                process.env.PORT ?? 3000
-            );
-
-
-
         server =
             app.listen(
-                port,
+                PORT,
                 () => {
 
                     logger.info?.(
                         {
-                            port,
+                            port: PORT,
                         },
                         "Conference Management API started"
                     );
@@ -218,42 +209,6 @@ async function bootstrap() {
 
 
 
-        //
-        // Process lifecycle signals
-        //
-        process.on(
-            "SIGTERM",
-            () => shutdown("SIGTERM")
-        );
-
-
-        process.on(
-            "SIGINT",
-            () => shutdown("SIGINT")
-        );
-
-
-        process.on(
-            "uncaughtException",
-            error =>
-                shutdown(
-                    "uncaughtException",
-                    error
-                )
-        );
-
-
-        process.on(
-            "unhandledRejection",
-            reason =>
-                shutdown(
-                    "unhandledRejection",
-                    reason
-                )
-        );
-
-
-
     } catch(error) {
 
 
@@ -272,6 +227,40 @@ async function bootstrap() {
     }
 
 }
+
+
+
+
+process.once(
+    "SIGTERM",
+    () => shutdown("SIGTERM")
+);
+
+
+process.once(
+    "SIGINT",
+    () => shutdown("SIGINT")
+);
+
+
+process.once(
+    "uncaughtException",
+    error =>
+        shutdown(
+            "uncaughtException",
+            error
+        )
+);
+
+
+process.once(
+    "unhandledRejection",
+    reason =>
+        shutdown(
+            "unhandledRejection",
+            reason
+        )
+);
 
 
 

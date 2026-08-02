@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>0/7</span>
+                <span class='fraction'>7/7</span>
             </div>
         
             
@@ -37,16 +37,16 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/1</span>
+                <span class='fraction'>1/1</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>0/7</span>
+                <span class='fraction'>7/7</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line low'></div>
+    <div class='status-line high'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -110,7 +110,10 @@
 <a name='L45'></a><a href='#L45'>45</a>
 <a name='L46'></a><a href='#L46'>46</a>
 <a name='L47'></a><a href='#L47'>47</a>
-<a name='L48'></a><a href='#L48'>48</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L48'></a><a href='#L48'>48</a>
+<a name='L49'></a><a href='#L49'>49</a>
+<a name='L50'></a><a href='#L50'>50</a>
+<a name='L51'></a><a href='#L51'>51</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -128,82 +131,88 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">/**
- * @file src/presentation/routes/journal.routes.js
- *
- * Routes for ledger journal entry operations.
- */
-&nbsp;
-import express from "express";
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import express from "express";
 &nbsp;
 import { validate } from "../../../../../shared/infrastructure/middleware/validate.js";
 import { authGuard } from "../../../../../shared/infrastructure/middleware/authGuard.js";
 import { idempotency } from "../../../../../shared/infrastructure/middleware/idempotency.js";
 import { correlationIdMiddleware } from "../../../../../shared/infrastructure/middleware/correlationId.js";
+&nbsp;
 import {
-  postJournalEntrySchema,
-  reverseJournalEntrySchema,
-  getJournalEntrySchema,
+    postJournalEntrySchema,
+    reverseJournalEntrySchema,
+    getJournalEntrySchema,
 } from "../validators/journal.validator.js";
 &nbsp;
-export default function <span class="fstat-no" title="function not covered" >createJournalRoutes(</span>journalController) {
-  const router = <span class="cstat-no" title="statement not covered" >express.Router();</span>
 &nbsp;
-  // Request context pipeline:
-  // correlation -&gt; authentication -&gt; idempotency -&gt; validation -&gt; controller
-<span class="cstat-no" title="statement not covered" >  router.use(correlationIdMiddleware);</span>
-<span class="cstat-no" title="statement not covered" >  router.use(authGuard);</span>
+export default function createJournalRoutes(
+    journalController
+) {
 &nbsp;
-<span class="cstat-no" title="statement not covered" >  router.post(</span>
-    "/",
-    idempotency,
-    validate(postJournalEntrySchema),
-    journalController.postEntry
-  );
+    const router = express.Router();
 &nbsp;
-<span class="cstat-no" title="statement not covered" >  router.post(</span>
-    "/:id/reverse",
-    idempotency,
-    validate(reverseJournalEntrySchema),
-    journalController.reverseEntry
-  );
 &nbsp;
-<span class="cstat-no" title="statement not covered" >  router.get(</span>
-    "/:id",
-    validate(getJournalEntrySchema),
-    journalController.getEntry
-  );
+    router.use(correlationIdMiddleware);
 &nbsp;
-<span class="cstat-no" title="statement not covered" >  return router;</span>
+    router.use(authGuard);
+&nbsp;
+&nbsp;
+    router.post(
+        "/",
+        idempotency,
+        validate(postJournalEntrySchema),
+        journalController.postEntry
+    );
+&nbsp;
+&nbsp;
+    router.post(
+        "/:id/reverse",
+        idempotency,
+        validate(reverseJournalEntrySchema),
+        journalController.reverseEntry
+    );
+&nbsp;
+&nbsp;
+    router.get(
+        "/:id",
+        validate(getJournalEntrySchema),
+        journalController.getEntry
+    );
+&nbsp;
+&nbsp;
+    return router;
 }</pre></td></tr></table></pre>
 
                 <div class='push'></div><!-- for sticky footer -->
@@ -211,7 +220,7 @@ export default function <span class="fstat-no" title="function not covered" >cre
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-07-31T02:28:29.461Z
+                at 2026-08-02T14:48:02.637Z
             </div>
         <script src="../../../../../../prettify.js"></script>
         <script>

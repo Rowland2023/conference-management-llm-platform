@@ -8,18 +8,10 @@
   "main": "src/index.js",
   "scripts": {
     "start": "nodemon --exec babel-node ./src/index.js",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage",
-    "test:unit": "jest tests/unit",
-    "test:integration": "jest tests/integration",
-    "test:smoke": "jest tests/smoke",
-    "test:e2e": "jest tests/e2e",
-    "test:load": "node tests/load/autocannon.js",
-    "test:k6": "k6 run tests/load/k6/load.js",
-    "test:stress": "k6 run tests/load/k6/stress.js",
-    "test:spike": "k6 run tests/load/k6/spike.js",
-    "test:soak": "k6 run tests/load/k6/soak.js",
+    "test": "cross-env NODE_ENV=test jest --runInBand",
+    "test:unit": "jest test/unit",
+    "test:integration": "jest test/integration",
+    "test:api": "jest test/api",
     "migrate": "knex migrate:latest",
     "rollback": "knex migrate:rollback",
     "status": "knex migrate:status",
@@ -43,7 +35,6 @@
     "ip-range-check": "^0.2.0",
     "joi": "^18.2.3",
     "jsonwebtoken": "^9.0.3",
-    "k6": "^0.0.0",
     "kafkajs": "^2.2.4",
     "knex": "^3.3.0",
     "nodemon": "^3.1.14",
@@ -58,9 +49,15 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@faker-js/faker": "^10.5.0",
     "@types/jest": "^30.0.0",
     "autocannon": "^8.0.0",
+    "babel-jest": "^30.4.1",
+    "cross-env": "^10.1.0",
     "jest": "^30.4.2",
-    "supertest": "^7.2.2"
+    "k6": "^0.0.0",
+    "nyc": "^18.0.0",
+    "supertest": "^7.2.2",
+    "testcontainers": "^12.0.4"
   }
 }

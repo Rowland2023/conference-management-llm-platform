@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">11.11% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>1/9</span>
+                <span class='fraction'>8/8</span>
             </div>
         
             
@@ -37,16 +37,16 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">0% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>0/1</span>
+                <span class='fraction'>1/1</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">11.11% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>1/9</span>
+                <span class='fraction'>8/8</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line low'></div>
+    <div class='status-line high'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -122,7 +122,16 @@
 <a name='L57'></a><a href='#L57'>57</a>
 <a name='L58'></a><a href='#L58'>58</a>
 <a name='L59'></a><a href='#L59'>59</a>
-<a name='L60'></a><a href='#L60'>60</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -136,118 +145,121 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
-<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">import { Router } from "express";
-import { authenticate } from "../../../shared-security-starter/presentation/authenticate.js";
-import { validate } from "../../../shared/Infrastructure/middleware/validate.js";
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-neutral">&nbsp;</span></td><td class="text"><pre class="prettyprint lang-js">// src/conference-management/registration/api/registration.route.js
+&nbsp;
+import { Router } from "express";
+&nbsp;
+import { authenticate } from "../../authentication/presentation/middleware/authenticate.js";
+import { validate } from "../../../shared/infrastructure/middleware/validate.js";
 &nbsp;
 import {
-  createRegistrationSchema,
-  updateRegistrationSchema,
-  registrationIdSchema,
-  registrationQuerySchema,
-  checkInRegistrationSchema,
-  cancelRegistrationSchema,
+    createRegistrationSchema,
+    updateRegistrationSchema,
+    registrationIdSchema,
+    registrationQuerySchema,
+    checkInRegistrationSchema,
+    cancelRegistrationSchema,
 } from "./validators/registration.schema.js";
 &nbsp;
-export const getRegistrationRoutes = <span class="fstat-no" title="function not covered" >(r</span>egistrationController) =&gt; {
-  const router = <span class="cstat-no" title="statement not covered" >Router();</span>
+export function getRegistrationRoutes(registrationController) {
 &nbsp;
-<span class="cstat-no" title="statement not covered" >  router.post(</span>
-    "/",
-    authenticate,
-    validate(createRegistrationSchema),
-    registrationController.createRegistration
-  );
+    const router = Router();
 &nbsp;
-<span class="cstat-no" title="statement not covered" >  router.get(</span>
-    "/",
-    authenticate,
-    validate(registrationQuerySchema),
-    registrationController.getAllRegistrations
-  );
+    router.post(
+        "/",
+        authenticate,
+        validate(createRegistrationSchema, "body"),
+        registrationController.createRegistration,
+    );
 &nbsp;
-<span class="cstat-no" title="statement not covered" >  router.get(</span>
-    "/:id",
-    authenticate,
-    validate(registrationIdSchema),
-    registrationController.getRegistrationById
-  );
+    router.get(
+        "/",
+        authenticate,
+        validate(registrationQuerySchema, "query"),
+        registrationController.getAllRegistrations,
+    );
 &nbsp;
-<span class="cstat-no" title="statement not covered" >  router.patch(</span>
-    "/:id",
-    authenticate,
-    validate(updateRegistrationSchema),
-    registrationController.updateRegistration
-  );
+    router.get(
+        "/:id",
+        authenticate,
+        validate(registrationIdSchema, "params"),
+        registrationController.getRegistrationById,
+    );
 &nbsp;
-<span class="cstat-no" title="statement not covered" >  router.post(</span>
-    "/:id/check-in",
-    authenticate,
-    validate(checkInRegistrationSchema),
-    registrationController.checkInRegistration
-  );
+    router.patch(
+        "/:id",
+        authenticate,
+        validate(updateRegistrationSchema, "body"),
+        registrationController.updateRegistration,
+    );
 &nbsp;
-<span class="cstat-no" title="statement not covered" >  router.delete(</span>
-    "/:id",
-    authenticate,
-    validate(cancelRegistrationSchema),
-    registrationController.cancelRegistration
-  );
+    router.post(
+        "/:id/check-in",
+        authenticate,
+        validate(checkInRegistrationSchema, "params"),
+        registrationController.checkInRegistration,
+    );
 &nbsp;
-<span class="cstat-no" title="statement not covered" >  return router;</span>
-};</pre></td></tr></table></pre>
+    router.delete(
+        "/:id",
+        authenticate,
+        validate(cancelRegistrationSchema, "params"),
+        registrationController.cancelRegistration,
+    );
+&nbsp;
+    return router;
+}</pre></td></tr></table></pre>
 
                 <div class='push'></div><!-- for sticky footer -->
             </div><!-- /wrapper -->
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-07-31T02:28:29.461Z
+                at 2026-08-02T14:48:02.637Z
             </div>
         <script src="../../../../prettify.js"></script>
         <script>

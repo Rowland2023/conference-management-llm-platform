@@ -2,22 +2,22 @@
 
 import Redis from "ioredis";
 
-import { KafkaConnection } 
+import { KafkaConnection }
     from "../shared/infrastructure/messaging/kafka/KafkaConnection.js";
 
-import { KafkaEventBus } 
+import { KafkaEventBus }
     from "../shared/infrastructure/messaging/kafka/KafkaEventBus.js";
 
-import { OutboxWorker } 
+import { OutboxWorker }
     from "../shared/infrastructure/messaging/outbox/OutboxWorker.js";
 
-import { PostgresOutboxRepository } 
+import { PostgresOutboxRepository }
     from "../shared/infrastructure/messaging/outbox/PostgresOutboxRepository.js";
 
-import KnexUnitOfWork 
+import KnexUnitOfWork
     from "../cross-cutting/database/KnexUnitOfWork.js";
 
-import { registerLockCommands } 
+import { registerLockCommands }
     from "../shared/infrastructure/redis/registerLockCommands.js";
 
 
@@ -27,21 +27,110 @@ export function bootstrapInfrastructure({
     logger,
 }) {
 
-
     // ======================================================
     // Redis
     // ======================================================
 
-    const redis =
-        new Redis({
-            host: config.redis.host,
-            port: config.redis.port,
-            password: config.redis.password,
-        });
+    const redis = new Redis({
+        host: config.redis.host,
+        port: config.redis.port,
+        password: config.redis.password,
+
+        lazyConnect: false,
+
+        maxRetriesPerRequest: 1,
+
+        retryStrategy(times) {
+
+            const delay = Math.min(times * 1000, 5000);
+
+            logger.warn(
+                {
+                    attempt: times,
+                    delay,
+                },
+                "Redis reconnect attempt."
+            );
+
+            // Stop reconnecting after 5 attempts
+            if (times >= 5) {
+
+                logger.error(
+                    "Redis unavailable. Giving up reconnect attempts."
+                );
+
+                return null;
+            }
+
+            return delay;
+        },
+    });
+
+
+    redis.on(
+        "connect",
+        () => {
+
+            logger.info(
+                "Redis connected."
+            );
+
+        }
+    );
+
+
+    redis.on(
+        "ready",
+        () => {
+
+            logger.info(
+                "Redis ready."
+            );
+
+        }
+    );
+
+
+    redis.on(
+        "error",
+        (err) => {
+
+            logger.warn(
+                {
+                    error: err.message,
+                },
+                "Redis connection error."
+            );
+
+        }
+    );
+
+
+    redis.on(
+        "close",
+        () => {
+
+            logger.warn(
+                "Redis connection closed."
+            );
+
+        }
+    );
+
+
+    redis.on(
+        "end",
+        () => {
+
+            logger.warn(
+                "Redis client disconnected."
+            );
+
+        }
+    );
 
 
     registerLockCommands(redis);
-
 
 
     // ======================================================
@@ -64,7 +153,6 @@ export function bootstrapInfrastructure({
         });
 
 
-
     // ======================================================
     // Database
     // ======================================================
@@ -74,7 +162,6 @@ export function bootstrapInfrastructure({
             new KnexUnitOfWork({
                 knex: db,
             });
-
 
 
     // ======================================================
@@ -95,7 +182,6 @@ export function bootstrapInfrastructure({
         });
 
 
-
     // ======================================================
     // Shared Infrastructure
     // ======================================================
@@ -105,7 +191,9 @@ export function bootstrapInfrastructure({
         db,
 
         redis,
+
         config,
+
         unitOfWorkFactory,
 
         kafkaConnection,
