@@ -1,14 +1,60 @@
 /**
- * Temporary authentication middleware.
+ * JWT authentication middleware.
  *
- * This will later:
- * - Read the Authorization header
- * - Verify the JWT
- * - Load the authenticated user
- * - Populate req.auth
+ * Responsibilities:
+ * - Read the Authorization header.
+ * - Verify the JWT.
+ * - Populate req.user.
  */
-export async function authenticate(req, res, next) {
-    req.auth = null;
+export function authenticate({
+    tokenVerifier,
+    logger,
+}) {
 
-    return next();
+    return async function authenticateMiddleware(
+        req,
+        res,
+        next,
+    ) {
+
+        try {
+
+            const authorization =
+                req.headers.authorization;
+
+            if (
+                !authorization ||
+                !authorization.startsWith("Bearer ")
+            ) {
+                return res.status(401).json({
+                    message: "Authentication required.",
+                });
+            }
+
+            const token =
+                authorization.slice(7);
+
+            const user =
+                await tokenVerifier.verify(token);
+
+            req.user = user;
+
+            return next();
+
+        } catch (error) {
+
+            logger?.warn(
+                {
+                    error,
+                },
+                "JWT authentication failed."
+            );
+
+            return res.status(401).json({
+                message: "Invalid or expired access token.",
+            });
+        }
+
+    };
+
 }

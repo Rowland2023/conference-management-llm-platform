@@ -1,181 +1,280 @@
-import { toResponseDto } from '../mappers/RegistrationMapper.js';
-import { createRegistrationSchema, updateRegistrationSchema } from './validators/registration.schema.js';
+import { toResponseDto } from "../mappers/RegistrationMapper.js";
 
 export class RegistrationController {
-  constructor({ 
-    createRegistrationUseCase, 
-    getRegistrationUseCase, 
-    getAllRegistrationsUseCase, 
-    updateRegistrationUseCase, 
-    cancelRegistrationUseCase, 
-    checkInRegistrationUseCase,
-    logger // <-- Inject your ILogger contract here
-  }) {
-    this.createRegistrationUseCase = createRegistrationUseCase;
-    this.getRegistrationUseCase = getRegistrationUseCase;
-    this.getAllRegistrationsUseCase = getAllRegistrationsUseCase;
-    this.updateRegistrationUseCase = updateRegistrationUseCase;
-    this.cancelRegistrationUseCase = cancelRegistrationUseCase;
-    this.checkInRegistrationUseCase = checkInRegistrationUseCase;
-    this.logger = logger;
-  }
+    constructor({
+        createRegistrationUseCase,
+        getRegistrationUseCase,
+        getAllRegistrationsUseCase,
+        updateRegistrationUseCase,
+        cancelRegistrationUseCase,
+        checkInRegistrationUseCase,
+        logger,
+    }) {
+        this.createRegistrationUseCase = createRegistrationUseCase;
+        this.getRegistrationUseCase = getRegistrationUseCase;
+        this.getAllRegistrationsUseCase = getAllRegistrationsUseCase;
+        this.updateRegistrationUseCase = updateRegistrationUseCase;
+        this.cancelRegistrationUseCase = cancelRegistrationUseCase;
+        this.checkInRegistrationUseCase = checkInRegistrationUseCase;
+        this.logger = logger;
+    }
 
-  /**
-   * Internal helper to extract or initialize standard tracing metadata 
-   * from the incoming express request headers.
-   */
-  _getTracingContext(req) {
-    return {
-      correlationId: req.headers['x-correlation-id'] || globalThis.crypto?.randomUUID() || req.id,
-      causationId: req.headers['x-request-id'] || null
+    _getTracingContext(req) {
+        return {
+            correlationId:
+                req.headers["x-correlation-id"] ??
+                globalThis.crypto?.randomUUID?.() ??
+                req.id,
+            causationId: req.headers["x-request-id"] ?? null,
+        };
+    }
+
+    createRegistration = async (req, res, next) => {
+        const tracingContext = this._getTracingContext(req);
+
+        try {
+            this.logger?.debug?.(
+                "Registration request received",
+                {
+                    body: req.body,
+                    userId: req.user?.id,
+                    ...tracingContext,
+                }
+            );
+
+            const registration =
+                await this.createRegistrationUseCase.execute(
+                    {
+                        attendeeId: req.user.id,
+                        ...req.body,
+                    },
+                    req.user,
+                    tracingContext,
+                );
+
+            this.logger?.debug?.(
+                "Registration use case completed",
+                {
+                    registrationId: registration.id,
+                    ...tracingContext,
+                }
+            );
+
+            this.logger?.info?.(
+                "Registration created successfully",
+                {
+                    registrationId: registration.id,
+                    userId: req.user.id,
+                    ...tracingContext,
+                }
+            );
+
+            return res
+                .status(201)
+                .json(toResponseDto(registration));
+
+        } catch (error) {
+
+            this.logger?.error?.(
+                "Registration creation failed",
+                {
+                    error,
+                    body: req.body,
+                    userId: req.user?.id,
+                    ...tracingContext,
+                }
+            );
+
+            return next(error);
+        }
     };
-  }
 
-  createRegistration = async (req, res, next) => {
-    const tracingContext = this._getTracingContext(req);
-    try {
-      const { error, value } = createRegistrationSchema.validate(req.body);
-      if (error) return res.status(400).json({ message: error.details[0].message });
+    getRegistrationById = async (req, res, next) => {
+        const tracingContext = this._getTracingContext(req);
 
-      // Pass tracing Context to use case if you want events to carry tracing IDs
-      const registration = await this.createRegistrationUseCase.execute({
-        attendeeId: req.user.id,
-        ...value,
-      }, req.user, tracingContext);
+        try {
+            const registration =
+                await this.getRegistrationUseCase.execute({
+                    id: req.params.id,
+                    currentUser: req.user,
+                });
 
-      this.logger.info('Registration processing completed successfully', {
-        registrationId: registration.id,
-        userId: req.user.id,
-        ...tracingContext
-      });
+            return res
+                .status(200)
+                .json(toResponseDto(registration));
 
-      res.status(201).json(toResponseDto(registration));
-    } catch (error) {
-      this.logger.error('Registration pipeline creation sequence failed', {
-        error,
-        body: req.body,
-        userId: req.user?.id,
-        ...tracingContext
-      });
-      next(error);
-    }
-  };
+        } catch (error) {
 
-  getRegistrationById = async (req, res, next) => {
-    const tracingContext = this._getTracingContext(req);
-    try {
-      const registration = await this.getRegistrationUseCase.execute({
-        id: req.params.id,
-        currentUser: req.user
-      });
-      res.status(200).json(toResponseDto(registration));
-    } catch (error) {
-      this.logger.error('Failed to retrieve registration data record', {
-        error,
-        registrationId: req.params.id,
-        ...tracingContext
-      });
-      next(error);
-    }
-  };
+            this.logger?.error?.(
+                "Failed to retrieve registration",
+                {
+                    error,
+                    registrationId: req.params.id,
+                    ...tracingContext,
+                }
+            );
 
-  getAllRegistrations = async (req, res, next) => {
-    const tracingContext = this._getTracingContext(req);
-    try {
-      const { page = 1, limit = 20, ...filters } = req.query;
-      const result = await this.getAllRegistrationsUseCase.execute({
-        page: Number(page),
-        limit: Math.min(Number(limit), 100),
-        filters,
-        currentUser: req.user
-      });
-      res.status(200).json({
-        data: result.items.map(toResponseDto),
-        meta: { page: result.page, limit: result.limit, total: result.total }
-      });
-    } catch (error) {
-      this.logger.error('Bulk query list fetch execution failed', {
-        error,
-        query: req.query,
-        ...tracingContext
-      });
-      next(error);
-    }
-  };
+            return next(error);
+        }
+    };
 
-  updateRegistration = async (req, res, next) => {
-    const tracingContext = this._getTracingContext(req);
-    try {
-      const { error, value } = updateRegistrationSchema.validate(req.body);
-      if (error) return res.status(400).json({ message: error.details[0].message });
+    getAllRegistrations = async (req, res, next) => {
+        const tracingContext = this._getTracingContext(req);
 
-      const registration = await this.updateRegistrationUseCase.execute({
-        id: req.params.id,
-        data: value,
-        currentUser: req.user
-      }, tracingContext);
+        try {
+            const {
+                page = 1,
+                limit = 20,
+                ...filters
+            } = req.query;
 
-      this.logger.info('Registration data record mutations saved successfully', {
-        registrationId: req.params.id,
-        ...tracingContext
-      });
+            const result =
+                await this.getAllRegistrationsUseCase.execute({
+                    page: Number(page),
+                    limit: Math.min(Number(limit), 100),
+                    filters,
+                    currentUser: req.user,
+                });
 
-      res.status(200).json(toResponseDto(registration));
-    } catch (error) {
-      this.logger.error('Registration properties mutation block failed', {
-        error,
-        registrationId: req.params.id,
-        ...tracingContext
-      });
-      next(error);
-    }
-  };
+            return res.status(200).json({
+                data: result.items.map(toResponseDto),
+                meta: {
+                    page: result.page,
+                    limit: result.limit,
+                    total: result.total,
+                },
+            });
 
-  checkInRegistration = async (req, res, next) => {
-    const tracingContext = this._getTracingContext(req);
-    try {
-      const registration = await this.checkInRegistrationUseCase.execute({
-        id: req.params.id,
-        currentUser: req.user
-      }, tracingContext);
+        } catch (error) {
 
-      this.logger.info('Attendee physical check-in recorded cleanly', {
-        registrationId: req.params.id,
-        ...tracingContext
-      });
+            this.logger?.error?.(
+                "Failed to retrieve registrations",
+                {
+                    error,
+                    query: req.query,
+                    ...tracingContext,
+                }
+            );
 
-      res.status(200).json(toResponseDto(registration));
-    } catch (error) {
-      this.logger.error('Gate check-in event execution halted', {
-        error,
-        registrationId: req.params.id,
-        ...tracingContext
-      });
-      next(error);
-    }
-  };
+            return next(error);
+        }
+    };
 
-  cancelRegistration = async (req, res, next) => {
-    const tracingContext = this._getTracingContext(req);
-    try {
-      await this.cancelRegistrationUseCase.execute({
-        id: req.params.id,
-        currentUser: req.user
-      }, tracingContext);
+    updateRegistration = async (req, res, next) => {
+        const tracingContext = this._getTracingContext(req);
 
-      this.logger.info('Registration state cancelled and inventory slot returned', {
-        registrationId: req.params.id,
-        ...tracingContext
-      });
+        try {
+            const registration =
+                await this.updateRegistrationUseCase.execute(
+                    {
+                        id: req.params.id,
+                        data: req.body,
+                        currentUser: req.user,
+                    },
+                    tracingContext,
+                );
 
-      res.status(204).send();
-    } catch (error) {
-      this.logger.error('Registration cancellation state routine failed', {
-        error,
-        registrationId: req.params.id,
-        ...tracingContext
-      });
-      next(error);
-    }
-  };
+            this.logger?.info?.(
+                "Registration updated",
+                {
+                    registrationId: req.params.id,
+                    ...tracingContext,
+                }
+            );
+
+            return res
+                .status(200)
+                .json(toResponseDto(registration));
+
+        } catch (error) {
+
+            this.logger?.error?.(
+                "Registration update failed",
+                {
+                    error,
+                    registrationId: req.params.id,
+                    ...tracingContext,
+                }
+            );
+
+            return next(error);
+        }
+    };
+
+    checkInRegistration = async (req, res, next) => {
+        const tracingContext = this._getTracingContext(req);
+
+        try {
+            const registration =
+                await this.checkInRegistrationUseCase.execute(
+                    {
+                        id: req.params.id,
+                        currentUser: req.user,
+                    },
+                    tracingContext,
+                );
+
+            this.logger?.info?.(
+                "Registration checked in",
+                {
+                    registrationId: req.params.id,
+                    ...tracingContext,
+                }
+            );
+
+            return res
+                .status(200)
+                .json(toResponseDto(registration));
+
+        } catch (error) {
+
+            this.logger?.error?.(
+                "Check-in failed",
+                {
+                    error,
+                    registrationId: req.params.id,
+                    ...tracingContext,
+                }
+            );
+
+            return next(error);
+        }
+    };
+
+    cancelRegistration = async (req, res, next) => {
+        const tracingContext = this._getTracingContext(req);
+
+        try {
+            await this.cancelRegistrationUseCase.execute(
+                {
+                    id: req.params.id,
+                    currentUser: req.user,
+                },
+                tracingContext,
+            );
+
+            this.logger?.info?.(
+                "Registration cancelled",
+                {
+                    registrationId: req.params.id,
+                    ...tracingContext,
+                }
+            );
+
+            return res.sendStatus(204);
+
+        } catch (error) {
+
+            this.logger?.error?.(
+                "Registration cancellation failed",
+                {
+                    error,
+                    registrationId: req.params.id,
+                    ...tracingContext,
+                }
+            );
+
+            return next(error);
+        }
+    };
 }

@@ -23,23 +23,32 @@ export function bootstrapRoutes({
         //
         // Standard router module
         //
-        if (module.router) {
+        //
+// Standard router module
+//
+if (module.router) {
 
-            app.use(
-                module.basePath,
-                module.router
-            );
+    console.log({
+        module: module.name,
+        basePath: module.basePath,
+        hasRouter: !!module.router,
+    });
 
-            logger.info(
-                {
-                    module: module.name,
-                    basePath: module.basePath,
-                },
-                "Module router registered."
-            );
+    app.use(
+        module.basePath,
+        module.router
+    );
 
-            continue;
-        }
+    logger.info(
+        {
+            module: module.name,
+            basePath: module.basePath,
+        },
+        "Module router registered."
+    );
+
+    continue;
+}
 
 
         //

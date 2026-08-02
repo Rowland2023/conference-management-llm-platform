@@ -8,8 +8,8 @@ import { UnitOfWork } from "../../shared/application/persistence/UnitOfWork.js";
 class KnexUnitOfWork extends UnitOfWork {
   /**
    * @param {Object} params
-   * @param {import('knex').Knex} params.knex - Configured Knex instance
-   * @param {Object} [params.options] - Transaction options (e.g. timeout)
+   * @param {import("knex").Knex} params.knex
+   * @param {Object} [params.options]
    */
   constructor({ knex, options = {} }) {
     super();
@@ -23,16 +23,15 @@ class KnexUnitOfWork extends UnitOfWork {
     this.knex = knex;
 
     this.options = {
-      timeout: 10000, // 10s default transaction safety timeout
+      timeout: 10000,
       ...options,
     };
 
     this.trackedAggregates = new Set();
   }
 
-
   /**
-   * Registers an aggregate root for domain event collection.
+   * Track an aggregate for later domain-event collection.
    *
    * @param {Object} aggregate
    */
@@ -42,25 +41,22 @@ class KnexUnitOfWork extends UnitOfWork {
     }
   }
 
-
   /**
-   * Clears tracked aggregates.
+   * Remove all tracked aggregates.
    */
   clear() {
     this.trackedAggregates.clear();
   }
 
-
   /**
-   * Executes work inside a Knex transaction scope.
+   * Execute work inside a transaction.
    *
-   * @param {(trx: import('knex').Knex.Transaction) => Promise<any>} work
-   * @returns {Promise<any>}
+   * @param {(trx: import("knex").Knex.Transaction) => Promise<any>} work
    */
   async execute(work) {
     if (typeof work !== "function") {
       throw new Error(
-        "[KnexUnitOfWork] Work parameter must be an executable function."
+        "[KnexUnitOfWork] Work parameter must be a function."
       );
     }
 
@@ -71,10 +67,18 @@ class KnexUnitOfWork extends UnitOfWork {
         },
         this.options
       );
-
     } finally {
       this.clear();
     }
+  }
+
+  /**
+   * Backward-compatible alias used by application use cases.
+   *
+   * @param {(trx: import("knex").Knex.Transaction) => Promise<any>} work
+   */
+  async runInTransaction(work) {
+    return this.execute(work);
   }
 }
 

@@ -121,21 +121,22 @@ export function createConferenceRegistrationSubModule({
         });
 
     //----------------------------------------------------------
-    // Presentation
-    //----------------------------------------------------------
+// Presentation
+//----------------------------------------------------------
 
-    const registrationController =
-        new RegistrationController({
-            createRegistrationUseCase,
-            getRegistrationUseCase,
-            getAllRegistrationsUseCase,
-            updateRegistrationUseCase,
-            cancelRegistrationUseCase,
-            checkInRegistrationUseCase,
-        });
+const registrationController =
+    new RegistrationController({
+        createRegistrationUseCase,
+        getRegistrationUseCase,
+        getAllRegistrationsUseCase,
+        updateRegistrationUseCase,
+        cancelRegistrationUseCase,
+        checkInRegistrationUseCase,
+        logger,
+    });
 
     const router =
-        getRegistrationRoutes(registrationController);
+    getRegistrationRoutes(registrationController);
 
     //----------------------------------------------------------
     // Integration
@@ -145,81 +146,85 @@ export function createConferenceRegistrationSubModule({
 
     return {
 
-        router,
+    name: "registration",
 
-        subscribe() {
+    basePath: "/registrations",
 
-            subscriptionToken =
-                eventBus.subscribe(
-                    "conference.deleted",
-                    async (evt) => {
+    router,
 
-                        const {
-                            conferenceId,
-                            correlationId,
-                        } = evt ?? {};
+    subscribe() {
 
-                        if (!conferenceId) {
+        subscriptionToken =
+            eventBus.subscribe(
+                "conference.deleted",
+                async (evt) => {
 
-                            logger.warn(
-                                "Received conference.deleted without conferenceId.",
-                                { evt }
-                            );
+                    const {
+                        conferenceId,
+                        correlationId,
+                    } = evt ?? {};
 
-                            return;
-                        }
+                    if (!conferenceId) {
 
-                        try {
+                        logger.warn(
+                            "Received conference.deleted without conferenceId.",
+                            { evt }
+                        );
 
-                            await cancelRegistrationUseCase.execute({
-                                conferenceId,
-                                reason: "CONFERENCE_CANCELLED",
-                                correlationId,
-                            });
-
-                        } catch (err) {
-
-                            logger.error(
-                                "Failed to process conference.deleted event.",
-                                {
-                                    err,
-                                    conferenceId,
-                                    correlationId,
-                                }
-                            );
-
-                        }
+                        return;
                     }
-                );
 
-        },
+                    try {
 
-        async start() {
+                        await cancelRegistrationUseCase.execute({
+                            conferenceId,
+                            reason: "CONFERENCE_CANCELLED",
+                            correlationId,
+                        });
 
-            logger.info(
-                "Conference Registration sub-module initialized."
+                    } catch (err) {
+
+                        logger.error(
+                            "Failed to process conference.deleted event.",
+                            {
+                                err,
+                                conferenceId,
+                                correlationId,
+                            }
+                        );
+
+                    }
+                }
             );
 
-        },
+    },
 
-        async stop() {
+    async start() {
 
-            if (
-                subscriptionToken &&
-                typeof eventBus.unsubscribe === "function"
-            ) {
-                eventBus.unsubscribe(
-                    "conference.deleted",
-                    subscriptionToken
-                );
-            }
+        logger.info(
+            "Conference Registration sub-module initialized."
+        );
 
-            logger.info(
-                "Conference Registration sub-module stopped."
+    },
+
+    async stop() {
+
+        if (
+            subscriptionToken &&
+            typeof eventBus.unsubscribe === "function"
+        ) {
+            eventBus.unsubscribe(
+                "conference.deleted",
+                subscriptionToken
             );
+        }
 
-        },
+        logger.info(
+            "Conference Registration sub-module stopped."
+        );
 
-    };
+    },
+
+};
 
 }
