@@ -1,4 +1,4 @@
-Conference Management System API
+AI-Enabled Conference Management Platform
 
 A production-ready, AI-enabled Conference Management platform demonstrating enterprise backend architecture using Domain-Driven Design, Event-Driven Architecture, Transactional Outbox, Redis, PostgreSQL, and natural-language function calling.
 
