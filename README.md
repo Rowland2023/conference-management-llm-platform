@@ -1,40 +1,68 @@
-# Conference Management System API
-Conference Management System API is a production-ready backend platform for managing conferences, ticketing, registrations, payments, and notifications. It demonstrates how to build modular, event-driven business applications using Domain-Driven Design, Clean Architecture, and reliable messaging patterns suitable for production systems.
+Conference Management System API
 
-A production-ready, Domain-Driven Design (DDD) conference management platform built with **Node.js**, **Express.js**, **PostgreSQL**, and **Sequelize**. The system is designed around modular architecture, event-driven principles, and enterprise patterns including **Transactional Outbox**, **Optimistic Concurrency Control**, and **CQRS-inspired application services**.
+A production-ready Conference Management platform demonstrating modern backend engineering with Domain-Driven Design (DDD), Event-Driven Architecture, Transactional Outbox, Optimistic Concurrency Control, and an LLM-powered natural language interface. Built for reliability, scalability, and maintainability under real-world workloads.
 
----
+🚀 Highlights
+Production-ready modular architecture
+Domain-Driven Design (DDD)
+Event-Driven Architecture
+Transactional Outbox Pattern
+Optimistic Concurrency Control
+JWT Authentication & Role-Based Authorization
+Redis Integration
+PostgreSQL Persistence
+Repository & Data Mapper Patterns
+Domain Events & Aggregate Roots
+Dockerized Development Environment
+AI-powered Natural Language → Function Calling
+Load Tested for High Concurrency
+📊 Performance Benchmark
 
-# Features
+The application was benchmarked using Autocannon under sustained concurrent traffic.
 
-* Domain-Driven Design (DDD)
-* Modular Architecture
-* RESTful API
-* PostgreSQL Persistence
-* Sequelize ORM
-* Transactional Outbox Pattern
-* Domain Events
-* Optimistic Concurrency Control
-* Repository Pattern
-* Data Mapper Pattern
-* Value Objects
-* Aggregate Roots
-* Event-Driven Architecture
-* Dependency Injection
-* Redis Support (optional)
-* Kafka/RabbitMQ Ready
-* JWT Authentication
-* Role-Based Authorization
-* Soft Delete Support
-* Validation
-* Structured Error Handling
-* Audit-Friendly Architecture
+Metric	Result
+Duration	30 seconds
+Concurrent Connections	100
+Total Requests	100,178
+Throughput	3,293 req/sec
+Success Rate	100% (2xx)
+Errors	0
+Timeouts	0
+Average Latency	298 ms
 
----
+These results demonstrate stable throughput and reliable request processing under concurrent load.
 
-# Architecture
+🤖 AI-Powered Conference Assistant
 
-```
+One of the platform's unique capabilities is an integrated LLM-powered assistant that enables users to interact with the system using natural language.
+
+Example:
+
+"Register Sarah for the AI Conference and reserve a VIP ticket."
+
+↓
+
+LLM translates the request into validated backend function calls.
+
+↓
+
+Application executes the request through the standard backend pipeline:
+
+Authentication
+Authorization
+Request Validation
+Business Rules
+Transaction Management
+Domain Events
+Transactional Outbox
+Event Publishing
+
+The AI layer never bypasses business rules—it simply provides a more intuitive interface to the same production-grade backend services.
+
+🏗 Architecture
+
+The project follows Domain-Driven Design (DDD) with a modular architecture that keeps business logic isolated from infrastructure concerns.
+
 src/
 ├── config/
 ├── modules/
@@ -55,316 +83,199 @@ src/
 ├── routes/
 ├── middleware/
 └── app.js
-```
 
-Each module is autonomous and contains its own:
+Each module contains its own:
 
-* Domain
-* Application
-* Infrastructure
-* Presentation
+Domain
+Application
+Infrastructure
+Presentation
 
-This minimizes coupling while maximizing maintainability and scalability.
+This keeps modules loosely coupled and independently maintainable.
 
----
+⚙ Core Architecture Patterns
+Domain-Driven Design (DDD)
 
-# Technology Stack
+Business logic is implemented using rich domain models consisting of:
 
-## Backend
+Aggregates
+Entities
+Value Objects
+Domain Services
+Domain Events
+Repositories
 
-* Node.js
-* Express.js
-* JavaScript (ES Modules)
+Business rules remain independent of persistence and infrastructure.
 
-## Database
-
-* PostgreSQL
-* Sequelize ORM
-
-## Infrastructure
-
-* Redis
-* Kafka / RabbitMQ (via Transactional Outbox)
-* Docker
-* Docker Compose
-
-## Authentication
-
-* JWT
-* Refresh Tokens
-
----
-
-# Domain-Driven Design
-
-Each module follows a layered DDD architecture.
-
-```
-Module
-│
-├── application/
-│   ├── commands/
-│   ├── queries/
-│   └── useCases/
-│
-├── domain/
-│   ├── entities/
-│   ├── events/
-│   ├── valueObjects/
-│   ├── repositories/
-│   └── services/
-│
-├── infrastructure/
-│   ├── persistence/
-│   │   ├── models/
-│   │   ├── mappers/
-│   │   └── repositories/
-│   └── integrations/
-│
-└── presentation/
-    ├── controllers/
-    ├── routes/
-    └── dto/
-```
-
----
-
-# Domain Events
+Event-Driven Architecture
 
 Business state changes are represented as immutable domain events.
 
 Examples include:
 
-* TicketCreated
-* TicketReserved
-* TicketReleased
-* TicketPurchased
-* TicketCancelled
-* TicketExpired
-* PaymentInitialized
-* PaymentSucceeded
-* RegistrationCreated
+RegistrationCreated
+TicketReserved
+TicketPurchased
+PaymentSucceeded
+TicketCancelled
+NotificationQueued
 
-Each event inherits from the shared `DomainEvent` base class, providing:
+These events enable reliable asynchronous communication across modules.
 
-* Event ID
-* Aggregate ID
-* Event Name
-* Event Version
-* Correlation ID
-* Causation ID
-* Timestamp
-* Immutable Payload
+Transactional Outbox Pattern
 
----
+To guarantee reliable event publishing, aggregate state and domain events are persisted atomically within the same database transaction.
 
-# Transactional Outbox Pattern
-
-The system guarantees reliable event publishing by persisting domain events and aggregate state within the same database transaction.
-
-```
 HTTP Request
       │
-      ▼
 Controller
       │
-      ▼
-Application Use Case
+Application Service
       │
-      ▼
 Aggregate
       │
-      ├── Validate Business Rules
-      ├── Change State
-      └── Record Domain Event
-      │
-      ▼
 Repository
       │
-      ├── Save Aggregate
-      ├── Save Outbox Events
-      └── Commit Transaction
+Database Transaction
+      ├── Aggregate State
+      └── Outbox Events
       │
-      ▼
 Outbox Publisher
       │
-      ▼
 Kafka / RabbitMQ
-```
 
-This approach prevents lost events while ensuring consistency between the database and message broker.
+This prevents lost events while ensuring database consistency.
 
----
+Optimistic Concurrency Control
 
-# Optimistic Concurrency
+Aggregates use version-based concurrency control to prevent lost updates.
 
-Aggregates use optimistic concurrency control through a version column.
-
-Typical update:
-
-```
 UPDATE tickets
-SET reserved = ?, version = version + 1
+SET version = version + 1
 WHERE id = ?
 AND version = ?;
-```
 
-This prevents concurrent updates from overwriting one another.
+Concurrent modifications are detected safely without database locking.
 
----
+Repository Pattern
 
-# Repository Pattern
+Repositories are responsible for:
 
-Repositories encapsulate persistence logic.
+Loading aggregates
+Persisting aggregates
+Saving domain events
+Managing transactions
+Enforcing optimistic concurrency
 
-Responsibilities include:
+Business rules remain inside the domain model.
 
-* Loading aggregates
-* Saving aggregates
-* Persisting domain events to the outbox
-* Transaction management
-* Optimistic concurrency enforcement
+Data Mapper Pattern
 
-Repositories do **not** contain business rules.
+Persistence models are translated into domain models through dedicated mappers.
 
----
-
-# Data Mapper Pattern
-
-Data mappers translate between persistence models and domain models.
-
-```
 Database
       │
-      ▼
-Mapper
+Persistence Model
       │
-      ▼
-Aggregate
-```
-
-This keeps domain entities independent of the ORM.
-
----
-
-# Aggregate Lifecycle
-
-```
-Command
+Data Mapper
       │
-      ▼
-Use Case
-      │
-      ▼
-Repository
-      │
-      ▼
-Aggregate
-      │
-      ├── Validate
-      ├── Change State
-      └── Record Events
-      │
-      ▼
-Repository.save()
-      │
-      ├── Persist Aggregate
-      ├── Persist Outbox
-      └── Commit
-```
+Domain Aggregate
 
----
+This keeps the domain independent of ORM-specific concerns.
 
-# Project Principles
+🛠 Technology Stack
+Backend
+Node.js
+Express.js
+JavaScript (ES Modules)
+Database
+PostgreSQL
+Knex.js
+Caching & Messaging
+Redis
+Kafka / RabbitMQ (Transactional Outbox)
+AI
+OpenAI Function Calling
+Tool Registry
+Natural Language → Backend Operations
+Testing
+Jest
+Autocannon
+Infrastructure
+Docker
+Docker Compose
+Security
+JWT Authentication
+Refresh Tokens
+Role-Based Authorization
+📦 Running the Project
 
-* Domain first
-* Rich domain model
-* Persistence ignorance
-* Explicit dependencies
-* Immutable domain events
-* Single Responsibility Principle
-* Dependency Injection
-* High cohesion
-* Low coupling
+Install dependencies
 
----
-
-# Running the Project
-
-## Install dependencies
-
-```bash
 npm install
-```
 
-## Configure environment
+Create a .env file
 
-Create an `.env` file:
-
-```env
 PORT=3000
 
 DATABASE_URL=postgres://user:password@localhost:5432/conference
 
-JWT_SECRET=your-secret
+JWT_ACCESS_SECRET=your-secret
+
+JWT_REFRESH_SECRET=your-secret
 
 REDIS_URL=redis://localhost:6379
-```
 
-## Run database migrations
+Run database migrations
 
-```bash
 npm run migrate
-```
 
-## Start development server
+Start the application
 
-```bash
 npm run dev
-```
 
-## Run tests
+Run tests
 
-```bash
 npm test
-```
+🎯 Design Principles
+Domain First
+Clean Architecture
+High Cohesion
+Low Coupling
+SOLID Principles
+Dependency Injection
+Persistence Ignorance
+Immutable Domain Events
+Explicit Dependencies
+Reliability by Design
+🚀 Roadmap
+✅ Domain-Driven Design
+✅ Transactional Outbox
+✅ Redis Integration
+✅ JWT Authentication
+✅ AI Function Calling
+✅ Performance Benchmarking
+🚧 Kafka Integration
+🚧 OpenTelemetry
+🚧 Distributed Tracing
+🚧 Kubernetes Deployment
+🚧 Multi-tenancy
+🚧 CQRS Read Models
+📄 License
 
----
+MIT License
 
-# Future Enhancements
+👨‍💻 Author
 
-* Event Sourcing
-* CQRS Read Models
-* Saga Orchestration
-* Elasticsearch
-* Distributed Tracing
-* OpenTelemetry
-* Kubernetes Deployment
-* Multi-tenancy
-* Metrics & Observability
-* API Versioning
-* GraphQL Gateway
-
----
-
-# License
-
-This project is licensed under the MIT License.
-
----
-
-# Author
-
-**Rowland Obi**
+Rowland Obi
 
 Senior Backend Engineer specializing in:
 
-* Domain-Driven Design
-* Distributed Systems
-* Payment Infrastructure
-* Event-Driven Architecture
-* PostgreSQL
-* Kafka
-* Redis
-* Node.js
-* Cloud-Native Backend Systems
+Distributed Systems
+Event-Driven Architecture
+Domain-Driven Design
+Payment Infrastructure
+PostgreSQL
+Redis
+AI-Enabled Backend Systems
+Cloud-Native Applications
