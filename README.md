@@ -1,6 +1,6 @@
 Conference Management System API
 
-A production-ready Conference Management platform demonstrating modern backend engineering with Domain-Driven Design (DDD), Event-Driven Architecture, Transactional Outbox, Optimistic Concurrency Control, and an LLM-powered natural language interface. Built for reliability, scalability, and maintainability under real-world workloads.
+A production-ready, AI-enabled Conference Management platform demonstrating enterprise backend architecture using Domain-Driven Design, Event-Driven Architecture, Transactional Outbox, Redis, PostgreSQL, and natural-language function calling.
 
 🚀 Highlights
 Production-ready modular architecture
