@@ -36,20 +36,20 @@ Rather than allowing an LLM to interact directly with databases or backend servi
 
 # ✨ Highlights
 
-- 🤖 LLM Function Calling
-- 🧠 AI Tool Registry
+-  LLM Function Calling
+-  AI Tool Registry
 - 🔐 JWT Authentication & RBAC
 - 📦 Domain-Driven Design (DDD)
 - ⚡ Event-Driven Architecture
 - 🔄 Transactional Outbox Pattern
-- 🛡 Optimistic Concurrency Control
+-  Optimistic Concurrency Control
 - 🗄 PostgreSQL + Redis
 - 📈 High-Concurrency Load Tested
 - 🐳 Dockerized Development Environment
 
 ---
 
-# 🤖 AI Workflow Orchestration
+#  AI Workflow Orchestration
 
 ### Example Request
 
@@ -323,7 +323,7 @@ Response
 
 ---
 
-# 🐍 Python Equivalents
+#  Python Equivalents
 
 | Node.js Implementation | Python Equivalent |
 |-------------------------|-------------------|
