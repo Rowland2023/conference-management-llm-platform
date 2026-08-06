@@ -1,4 +1,4 @@
-// src/conference-management/accounting-services/invoice/index.js
+// invoice/index.js
 
 import createInvoiceRoutes
     from "./presentation/routes/invoice.routes.js";
@@ -7,96 +7,181 @@ import { InvoiceController }
     from "./presentation/controller/InvoiceController.js";
 
 import { PostgresInvoiceRepository }
-    from "./infrastructure/repositories/PostgresInvoiceRepository.js";
+    from "./infrastructure/persistence/PostgresInvoiceRepository.js";
+
+import { InvoicePricingService }
+    from "./domain/services/InvoicePricingService.js";
+
+import { InvoiceService }
+    from "./application/services/InvoiceService.js";
 
 import { CreateInvoiceUseCase }
-    from "./application/use_case/CreateInvoiceUseCase.js";
+    from "./application/use_cases/CreateInvoiceUseCase.js";
 
 import { CancelInvoiceUseCase }
-    from "./application/use_case/CancelInvoiceUseCase.js";
+    from "./application/use_cases/CancelInvoiceUseCase.js";
 
 import { IssueInvoiceUseCase }
-    from "./application/use_case/IssueInvoiceUseCase.js";
+    from "./application/use_cases/IssueInvoiceUseCase.js";
 
 import { RecordPaymentUseCase }
-    from "./application/use_case/RecordPaymentUseCase.js";
+    from "./application/use_cases/RecordPaymentUseCase.js";
 
 
 export function createInvoiceModule({
 
-    db,
+    knex,
+
+    transactionManager,
+
+    eventBus,
+
     logger = console,
 
 }) {
 
-    if (!db) {
+    //--------------------------------------------------
+    // Validation
+    //--------------------------------------------------
+
+    if (!knex) {
+
         throw new Error(
-            "InvoiceModule: db is required."
+
+            "InvoiceModule: knex is required."
+
         );
+
     }
 
-    // ======================================================
+    if (!transactionManager) {
+
+        throw new Error(
+
+            "InvoiceModule: transactionManager is required."
+
+        );
+
+    }
+
+    if (!eventBus) {
+
+        throw new Error(
+
+            "InvoiceModule: eventBus is required."
+
+        );
+
+    }
+
+
+    //--------------------------------------------------
     // Infrastructure
-    // ======================================================
+    //--------------------------------------------------
 
     const invoiceRepository =
         new PostgresInvoiceRepository({
 
-            db,
+            knex,
 
         });
 
 
-    // ======================================================
+    //--------------------------------------------------
+    // Domain
+    //--------------------------------------------------
+
+    const invoicePricingService =
+        new InvoicePricingService();
+
+
+    //--------------------------------------------------
     // Application
-    // ======================================================
+    //--------------------------------------------------
 
     const createInvoiceUseCase =
         new CreateInvoiceUseCase({
 
             invoiceRepository,
+
+            invoicePricingService,
+
+            transactionManager,
+
+            eventBus,
+
             logger,
 
         });
+
 
     const cancelInvoiceUseCase =
         new CancelInvoiceUseCase({
 
             invoiceRepository,
+
+            transactionManager,
+
+            eventBus,
+
             logger,
 
         });
+
 
     const issueInvoiceUseCase =
         new IssueInvoiceUseCase({
 
             invoiceRepository,
+
+            transactionManager,
+
+            eventBus,
+
             logger,
 
         });
+
 
     const recordPaymentUseCase =
         new RecordPaymentUseCase({
 
             invoiceRepository,
+
+            transactionManager,
+
+            eventBus,
+
             logger,
 
         });
 
 
-    // ======================================================
+    const invoiceService =
+        new InvoiceService({
+
+            createInvoiceUseCase,
+
+            cancelInvoiceUseCase,
+
+            issueInvoiceUseCase,
+
+            recordPaymentUseCase,
+
+        });
+
+
+    //--------------------------------------------------
     // Presentation
-    // ======================================================
+    //--------------------------------------------------
 
     const invoiceController =
         new InvoiceController({
 
-            createInvoiceUseCase,
-            cancelInvoiceUseCase,
-            issueInvoiceUseCase,
-            recordPaymentUseCase,
+            invoiceService,
 
         });
+
 
     const router =
         createInvoiceRoutes({
@@ -106,23 +191,33 @@ export function createInvoiceModule({
         });
 
 
-    // ======================================================
+    //--------------------------------------------------
     // Module API
-    // ======================================================
+    //--------------------------------------------------
 
     return {
 
+        name: "invoice",
+
         router,
 
-        controller: invoiceController,
+        controller:
+            invoiceController,
 
-        repository: invoiceRepository,
+        service:
+            invoiceService,
+
+        repository:
+            invoiceRepository,
 
         useCases: {
 
             createInvoiceUseCase,
+
             cancelInvoiceUseCase,
+
             issueInvoiceUseCase,
+
             recordPaymentUseCase,
 
         },

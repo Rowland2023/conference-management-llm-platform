@@ -1,33 +1,108 @@
-// src/modules/Payment/api/payment.webhook.js
+/**
+ * @file payment/api/paymentWebhook.controller.js
+ *
+ * HTTP adapter for payment provider callbacks.
+ */
 
 export class PaymentWebhookController {
-    constructor({ handleWebhookUseCase }) {
-        this.handleWebhookUseCase = handleWebhookUseCase;
+
+
+    constructor({
+
+        paymentWebhookService,
+
+    }) {
+
+
+        this.paymentWebhookService =
+            paymentWebhookService;
+
     }
 
-    async handlePaystackWebhook(req, res, next) {
-        try {
-            await this.handleWebhookUseCase.execute({
-                gateway: 'paystack',
-                rawBody: req.rawBody,
-                headers: req.headers
-            });
-            return res.sendStatus(200);
-        } catch (error) {
-            next(error);
-        }
-    }
 
-    async handleStripeWebhook(req, res, next) {
+
+
+
+    /**
+     * POST /payments/webhooks/paystack
+     */
+    handlePaystackWebhook = async (req, res, next) => {
+
         try {
-            await this.handleWebhookUseCase.execute({
-                gateway: 'stripe',
-                rawBody: req.rawBody,
-                headers: req.headers
+
+
+            await this.paymentWebhookService
+                .handlePaystackWebhook({
+
+                    payload: req.body,
+
+                    signature:
+                        req.headers["x-paystack-signature"],
+
+                    correlationId:
+                        req.correlationId,
+
+                });
+
+
+
+            return res.status(200).json({
+
+                received: true,
+
             });
-            return res.sendStatus(200);
-        } catch (error) {
-            next(error);
+
+
+        } catch(err) {
+
+            next(err);
+
         }
-    }
+
+    };
+
+
+
+
+
+
+    /**
+     * POST /payments/webhooks/stripe
+     */
+    handleStripeWebhook = async (req, res, next) => {
+
+        try {
+
+
+            await this.paymentWebhookService
+                .handleStripeWebhook({
+
+                    payload: req.body,
+
+                    signature:
+                        req.headers["stripe-signature"],
+
+                    correlationId:
+                        req.correlationId,
+
+                });
+
+
+
+            return res.status(200).json({
+
+                received: true,
+
+            });
+
+
+        } catch(err) {
+
+            next(err);
+
+        }
+
+    };
+
+
 }

@@ -1,276 +1,405 @@
 /**
- * @file application/ProcessRefundUseCase.js
- * @description Command Handler responsible for safe, idempotent execution of pending refunds.
+ * @file refund/application/ProcessRefundUseCase.js
+ *
+ * Handles refund processing workflow.
+ *
+ * Application service responsible for coordinating:
+ * - Refund aggregate lifecycle
+ * - Payment gateway interaction
+ * - Persistence
+ * - Transactional outbox publishing
  */
 
-import { RefundDomainError } from "../domain/RefundErrors.js";
-
-class ProcessRefundUseCase {
-
-  /**
-   * @param {Object} params
-   * @param {Object} params.refundRepository
-   * @param {Object} params.paymentGatewayAdapter
-   * @param {Object} params.outboxRepository
-   * @param {Object} params.dbTransactionManager
-   * @param {Object} [params.logger]
-   */
-  constructor({
-    refundRepository,
-    paymentGatewayAdapter,
-    outboxRepository,
-    dbTransactionManager,
-    logger = console,
-  }) {
-
-    this.refundRepository = refundRepository;
-    this.paymentGatewayAdapter = paymentGatewayAdapter;
-    this.outboxRepository = outboxRepository;
-    this.dbTransactionManager = dbTransactionManager;
-    this.logger = logger;
-  }
+import Refund from "../domain/Refund.js";
 
 
-  /**
-   * Safely executes a refund against the payment processor using double-check locking
-   * and strict idempotency controls.
-   *
-   * @param {string} refundId
-   * @param {Object} [options]
-   * @param {string} [options.correlationId]
-   * @returns {Promise<Object>}
-   */
-  async execute(refundId, options = {}) {
-
-    const {
-      correlationId,
-    } = options;
+export default class ProcessRefundUseCase {
 
 
-    // -------------------------------------------------------------------------
-    // Phase 1: Acquire Row Lock & Validate Transition to PROCESSING
-    // -------------------------------------------------------------------------
+    constructor({
 
-    const refund =
-      await this.dbTransactionManager.runInTransaction(
-        async (trx) => {
+        refundRepository,
 
-          // SELECT ... FOR UPDATE
-          const record =
-            await this.refundRepository.findByIdForUpdate(
-              refundId,
-              { trx }
-            );
+        paymentGatewayAdapter,
 
+        outboxRepository,
 
-          if (!record) {
-            throw new RefundDomainError(
-              `Refund with ID '${refundId}' was not found.`,
-              "REFUND_NOT_FOUND"
-            );
-          }
+        dbTransactionManager,
+
+        logger,
+
+    }) {
 
 
-          // Idempotent short circuit
-          if (record.status === "COMPLETED") {
-
-            this.logger.info(
-              `[ProcessRefundUseCase] Refund '${refundId}' already completed. Skipping processing.`
-            );
-
-            return record;
-          }
+        this.refundRepository =
+            refundRepository;
 
 
-          if (record.status === "PROCESSING") {
-
-            this.logger.warn(
-              `[ProcessRefundUseCase] Refund '${refundId}' is already currently processing elsewhere.`
-            );
-
-            return record;
-          }
+        this.paymentGatewayAdapter =
+            paymentGatewayAdapter;
 
 
-          // Domain transition
-          record.markProcessing();
+        this.outboxRepository =
+            outboxRepository;
 
 
-          await this.refundRepository.updateStatus(
-            record,
-            { trx }
-          );
+        this.dbTransactionManager =
+            dbTransactionManager;
 
 
-          return record;
-        }
-      );
+        this.logger =
+            logger;
 
-
-    // Already completed or another worker owns execution
-    if (
-      refund.status === "COMPLETED" ||
-      (
-        refund.status === "PROCESSING" &&
-        !refund.isDirty()
-      )
-    ) {
-      return refund;
     }
 
 
 
-    // -------------------------------------------------------------------------
-    // Phase 2: Upstream Gateway Execution
-    // -------------------------------------------------------------------------
-
-    try {
-
-      const gatewayIdempotencyKey =
-        `refund_exec_${refund.id}_${refund.idempotencyKey}`;
-
-
-      const gatewayResult =
-        await this.paymentGatewayAdapter.executeRefund({
-
-          gatewayIdempotencyKey,
-
-          transactionReference:
-            refund.transactionId,
-
-          amount:
-            refund.amount.amount,
-
-          currency:
-            refund.amount.currency,
-
-          reason:
-            refund.reason.toString(),
-
-        });
 
 
 
-      // -----------------------------------------------------------------------
-      // Phase 3: Complete Refund + Atomic Outbox Commit
-      // -----------------------------------------------------------------------
-
-      await this.dbTransactionManager.runInTransaction(
-        async (trx) => {
-
-          refund.markCompleted(
-            gatewayResult.gatewayReference
-          );
+    async execute(command) {
 
 
-          await this.refundRepository.updateStatus(
-            refund,
-            { trx }
-          );
+        const {
+
+            transactionId,
+
+            accountId,
+
+            amount,
+
+            currency = "NGN",
+
+            originalTransactionAmount,
+
+            totalAlreadyRefunded,
+
+            reason,
+
+            idempotencyKey,
+
+            correlationId,
+
+        } = command;
 
 
-          const events =
-            refund.pullDomainEvents();
 
 
-          for (const event of events) {
 
-            await this.outboxRepository.save(
-              event,
-              {
-                trx,
-                correlationId,
-              }
-            );
 
-          }
+
+        //--------------------------------------------------
+        // 1. Idempotency check
+        //--------------------------------------------------
+
+        const existingRefund =
+            await this.refundRepository
+                .findByIdempotencyKey(
+                    idempotencyKey
+                );
+
+
+        if (existingRefund) {
+
+            return existingRefund;
 
         }
-      );
-
-
-      this.logger.info(
-        `[ProcessRefundUseCase] Refund '${refundId}' successfully processed and completed.`
-      );
-
-
-      return refund;
-
-
-    } catch (error) {
-
-
-      this.logger.error(
-        `[ProcessRefundUseCase] Gateway failure for refund '${refundId}'`,
-        {
-          error: error.message,
-          isTransient: error.isTransient || false,
-          code: error.code,
-        }
-      );
 
 
 
-      // -----------------------------------------------------------------------
-      // Phase 4: Failure / Recovery Handling
-      // -----------------------------------------------------------------------
 
 
-      // Network timeout, 5xx, unknown outcome:
-      // Keep PROCESSING for reconciliation worker.
-      if (error.isTransient) {
 
-        this.logger.warn(
-          `[ProcessRefundUseCase] Preserving PROCESSING state for refund '${refundId}' due to transient timeout.`
+
+        //--------------------------------------------------
+        // 2. Create Refund Aggregate
+        //--------------------------------------------------
+
+        const refund =
+            Refund.create({
+
+                idempotencyKey,
+
+                transactionId,
+
+                accountId,
+
+                amount,
+
+                currency,
+
+                originalTransactionAmount,
+
+                totalAlreadyRefunded,
+
+                reason,
+
+            });
+
+
+
+
+
+
+
+        //--------------------------------------------------
+        // 3. Persist requested refund
+        //--------------------------------------------------
+
+        await this.dbTransactionManager.transaction(
+
+            async (trx)=>{
+
+
+                await this.refundRepository.save(
+
+                    refund,
+
+                    {
+                        trx,
+                    }
+
+                );
+
+
+                await this._publishDomainEvents(
+
+                    refund,
+
+                    correlationId,
+
+                    trx
+
+                );
+
+
+                refund.clearDomainEvents();
+
+
+            }
+
         );
 
-        throw error;
-      }
 
 
 
-      // Deterministic failure
-      await this.dbTransactionManager.runInTransaction(
-        async (trx) => {
-
-          refund.markFailed(
-            error.message,
-            error.code
-          );
 
 
-          await this.refundRepository.updateStatus(
-            refund,
-            { trx }
-          );
 
 
-          const events =
-            refund.pullDomainEvents();
+        //--------------------------------------------------
+        // 4. Execute external refund
+        //--------------------------------------------------
+
+        try {
 
 
-          for (const event of events) {
+            refund.markProcessing();
 
-            await this.outboxRepository.save(
-              event,
-              {
-                trx,
-                correlationId,
-              }
+
+
+            const gatewayResponse =
+
+                await this.paymentGatewayAdapter.refund({
+
+                    transactionId,
+
+                    amount,
+
+                    currency,
+
+                });
+
+
+
+
+
+
+            //--------------------------------------------------
+            // 5. Complete refund
+            //--------------------------------------------------
+
+            refund.markCompleted(
+
+                gatewayResponse.reference
+
             );
 
-          }
+
+
+
+
+        } catch(error) {
+
+
+            refund.markFailed(
+                error.message
+            );
+
+
+
+            await this.dbTransactionManager.transaction(
+
+                async (trx)=>{
+
+
+                    await this.refundRepository.updateStatus(
+
+                        refund,
+
+                        {
+                            trx,
+                        }
+
+                    );
+
+
+                    await this._publishDomainEvents(
+
+                        refund,
+
+                        correlationId,
+
+                        trx
+
+                    );
+
+
+                    refund.clearDomainEvents();
+
+
+                }
+
+            );
+
+
+
+            throw error;
 
         }
-      );
 
 
-      throw error;
+
+
+
+
+
+        //--------------------------------------------------
+        // 6. Persist final state
+        //--------------------------------------------------
+
+        const completedRefund =
+
+            await this.dbTransactionManager.transaction(
+
+                async (trx)=>{
+
+
+                    await this.refundRepository.updateStatus(
+
+                        refund,
+
+                        {
+                            trx,
+                        }
+
+                    );
+
+
+
+                    await this._publishDomainEvents(
+
+                        refund,
+
+                        correlationId,
+
+                        trx
+
+                    );
+
+
+
+                    refund.clearDomainEvents();
+
+
+
+                    return refund;
+
+
+                }
+
+            );
+
+
+
+
+
+
+
+
+        this.logger.info({
+
+            refundId:
+                completedRefund.id,
+
+        }, "Refund completed");
+
+
+
+
+
+
+        return completedRefund;
+
+
     }
 
-  }
+
+
+
+
+
+
+
+    async _publishDomainEvents(
+
+        refund,
+
+        correlationId,
+
+        trx
+
+    ) {
+
+
+        for (
+            const event of refund.domainEvents
+        ) {
+
+
+            await this.outboxRepository.save({
+
+                aggregateId:
+                    refund.id,
+
+
+                eventType:
+                    event.type,
+
+
+                payload:
+                    event.payload,
+
+
+                correlationId,
+
+
+            }, trx);
+
+
+        }
+
+    }
+
 
 }
-
-
-export default ProcessRefundUseCase;

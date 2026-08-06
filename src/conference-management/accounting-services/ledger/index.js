@@ -1,6 +1,25 @@
 // src/conference-management/accounting-services/ledger/index.js
 
-import { Router } from "express";
+import { Router }
+    from "express";
+
+import { LedgerService }
+    from "./application/services/LedgerService.js";
+
+import { CreateAccountUseCase }
+    from "./application/use_cases/CreateAccountUseCase.js";
+
+import { CreateHoldUseCase }
+    from "./application/use_cases/CreateHoldUseCase.js";
+
+import { GetLedgerBalanceUseCase }
+    from "./application/use_cases/GetLedgerBalanceUseCase.js";
+
+import { PostJournalEntryUseCase }
+    from "./application/use_cases/PostJournalEntryUseCase.js";
+
+import { ReverseJournalEntryUseCase }
+    from "./application/use_cases/ReverseJournalEntryUseCase.js";
 
 import { PostgresAccountRepository }
     from "./infrastructure/repositories/postgres-account.repository.js";
@@ -10,21 +29,6 @@ import { PostgresJournalEntryRepository }
 
 import { PostgresHoldRepository }
     from "./infrastructure/repositories/postgres-hold.repository.js";
-
-import { CreateAccountUseCase }
-    from "./application/create-account.usecase.js";
-
-import { PostJournalEntryUseCase }
-    from "./application/post-journal-entry.usecase.js";
-
-import { ReverseJournalEntryUseCase }
-    from "./application/reverse-journal-entry.usecase.js";
-
-import { GetLedgerBalanceUseCase }
-    from "./application/get-ledger-balance.usecase.js";
-
-import { CreateHoldUseCase }
-    from "./application/create-hold.usecase.js";
 
 import AccountController
     from "./presentation/controller/account.controller.js";
@@ -46,145 +50,225 @@ import createHoldRoutes
 
 
 export function createLedgerModule({
+
     unitOfWorkFactory,
+
     outboxRepository,
+
     logger,
+
 }) {
+
+    //--------------------------------------------------
+    // Unit Of Work
+    //--------------------------------------------------
 
     const uow =
         unitOfWorkFactory();
 
 
-    // ======================================================
+    //--------------------------------------------------
     // Repositories
-    // ======================================================
+    //--------------------------------------------------
 
     const accountRepository =
         new PostgresAccountRepository({
+
             uow,
+
         });
 
 
     const journalRepository =
         new PostgresJournalEntryRepository({
+
             uow,
+
         });
 
 
     const holdRepository =
         new PostgresHoldRepository({
+
             uow,
+
         });
 
 
-
-    // ======================================================
+    //--------------------------------------------------
     // Use Cases
-    // ======================================================
+    //--------------------------------------------------
 
     const createAccountUseCase =
         new CreateAccountUseCase({
+
             accountRepository,
+
             outboxRepository,
+
             uow,
+
             logger,
+
         });
 
 
     const postJournalEntryUseCase =
         new PostJournalEntryUseCase({
+
             journalRepository,
+
             accountRepository,
+
             outboxRepository,
+
             uow,
+
             logger,
+
         });
 
 
     const reverseJournalEntryUseCase =
         new ReverseJournalEntryUseCase({
+
             journalRepository,
+
             accountRepository,
+
             outboxRepository,
+
             uow,
+
             logger,
+
         });
 
 
     const getLedgerBalanceUseCase =
         new GetLedgerBalanceUseCase({
+
             accountRepository,
+
             logger,
+
         });
 
 
     const createHoldUseCase =
         new CreateHoldUseCase({
+
             holdRepository,
+
             accountRepository,
+
             outboxRepository,
+
             uow,
+
             logger,
+
         });
 
 
+    //--------------------------------------------------
+    // Application Service
+    //--------------------------------------------------
 
-    // ======================================================
+    const ledgerService =
+        new LedgerService({
+
+            createAccountUseCase,
+
+            createHoldUseCase,
+
+            getLedgerBalanceUseCase,
+
+            postJournalEntryUseCase,
+
+            reverseJournalEntryUseCase,
+
+        });
+
+
+    //--------------------------------------------------
     // Controllers
-    // ======================================================
+    //--------------------------------------------------
 
     const accountController =
         new AccountController({
-            createAccountUseCase,
-            getAccountBalanceUseCase:
-                getLedgerBalanceUseCase,
+
+            ledgerService,
+
         });
 
 
     const journalController =
         new JournalController({
-            postJournalEntryUseCase,
-            reverseJournalEntryUseCase,
+
+            ledgerService,
+
         });
 
 
     const holdController =
         new HoldController({
-            createHoldUseCase,
+
+            ledgerService,
+
         });
 
 
-
-    // ======================================================
+    //--------------------------------------------------
     // Router
-    // ======================================================
+    //--------------------------------------------------
 
     const router =
         Router();
 
 
     router.use(
+
         "/accounts",
-        createAccountRoutes(accountController)
+
+        createAccountRoutes(
+
+            accountController
+
+        )
+
     );
 
 
     router.use(
+
         "/journals",
-        createJournalRoutes(journalController)
+
+        createJournalRoutes(
+
+            journalController
+
+        )
+
     );
 
 
     router.use(
+
         "/holds",
-        createHoldRoutes(holdController)
+
+        createHoldRoutes(
+
+            holdController
+
+        )
+
     );
 
 
-
-    // ======================================================
-    // Public Module API
-    // ======================================================
+    //--------------------------------------------------
+    // Public API
+    //--------------------------------------------------
 
     return {
 
@@ -192,24 +276,43 @@ export function createLedgerModule({
 
         router,
 
+        service:
+            ledgerService,
+
         controllers: {
+
             accountController,
+
             journalController,
+
             holdController,
+
         },
 
         repositories: {
+
             accountRepository,
+
             journalRepository,
+
             holdRepository,
+
         },
 
         useCases: {
+
             createAccountUseCase,
-            postJournalEntryUseCase,
-            reverseJournalEntryUseCase,
-            getLedgerBalanceUseCase,
+
             createHoldUseCase,
+
+            getLedgerBalanceUseCase,
+
+            postJournalEntryUseCase,
+
+            reverseJournalEntryUseCase,
+
         },
+
     };
+
 }
