@@ -4,25 +4,16 @@
  * Handles account lifecycle operations.
  */
 
-import AccountSerializer from "../serializers/account.serializer.js";
-
-
 export default class AccountController {
 
     constructor({
-        createAccountUseCase,
-        getAccountBalanceUseCase,
-        listAccountsUseCase,
+
+        ledgerService,
+
     }) {
 
-        this.createAccountUseCase =
-            createAccountUseCase;
-
-        this.getAccountBalanceUseCase =
-            getAccountBalanceUseCase;
-
-        this.listAccountsUseCase =
-            listAccountsUseCase;
+        this.ledgerService =
+            ledgerService;
 
     }
 
@@ -47,27 +38,19 @@ export default class AccountController {
             };
 
 
-            const account =
-                await this.createAccountUseCase.execute(
+            const result =
+                await this.ledgerService.createAccount(
                     command
                 );
 
 
             return res
                 .status(201)
-                .json({
+                .json(result);
 
-                    success: true,
+        }
 
-                    data:
-                        AccountSerializer.serialize(
-                            account
-                        ),
-
-                });
-
-
-        } catch(error){
+        catch (error) {
 
             next(error);
 
@@ -76,14 +59,12 @@ export default class AccountController {
     };
 
 
-
     /**
      * GET /accounts/:id/balance
      */
-    getBalance = async (req,res,next)=>{
+    getBalance = async (req, res, next) => {
 
         try {
-
 
             const query = {
 
@@ -96,25 +77,17 @@ export default class AccountController {
             };
 
 
-            const balance =
-                await this.getAccountBalanceUseCase.execute(
+            const result =
+                await this.ledgerService.getAccountBalance(
                     query
                 );
 
 
-            return res.json({
+            return res.json(result);
 
-                success:true,
+        }
 
-                data:
-                    AccountSerializer.serialize(
-                        balance
-                    ),
-
-            });
-
-
-        } catch(error){
+        catch (error) {
 
             next(error);
 
@@ -123,31 +96,36 @@ export default class AccountController {
     };
 
 
-
     /**
      * GET /accounts
      */
-    listAccounts = async(req,res,next)=>{
+    listAccounts = async (req, res, next) => {
 
         try {
 
+            if (
 
-            if(!this.listAccountsUseCase){
+                typeof this.ledgerService.listAccounts
+                !== "function"
 
-                return res.status(501).json({
+            ) {
 
-                    success:false,
+                return res
+                    .status(501)
+                    .json({
 
-                    message:
-                        "Account listing not implemented"
+                        success: false,
 
-                });
+                        message:
+                            "Account listing not implemented.",
+
+                    });
 
             }
 
 
-            const accounts =
-                await this.listAccountsUseCase.execute({
+            const result =
+                await this.ledgerService.listAccounts({
 
                     tenantId:
                         req.actor?.tenantId,
@@ -155,26 +133,16 @@ export default class AccountController {
                 });
 
 
+            return res.json(result);
 
-            return res.json({
+        }
 
-                success:true,
-
-                data:
-                    accounts.map(
-                        AccountSerializer.serialize
-                    ),
-
-            });
-
-
-        } catch(error){
+        catch (error) {
 
             next(error);
 
         }
 
     };
-
 
 }
