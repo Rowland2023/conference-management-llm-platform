@@ -1,4 +1,4 @@
-// src/authentication/domain/valueObjects/AuthenticationTokens.js
+// src/conference-management/authentication/domain/valueObjects/AuthenticationTokens.js
 
 export class AuthenticationTokens {
 

@@ -136,7 +136,7 @@ async function shutdown(signal, error) {
 
 
 
-async function bootstrap() {
+async function boostrap() {
 
 
     try {
@@ -213,7 +213,7 @@ async function bootstrap() {
 
 
         console.error(
-            "Fatal bootstrap failure:",
+            "Fatal boostrap failure:",
             error
         );
 
@@ -264,4 +264,4 @@ process.once(
 
 
 
-bootstrap();
+boostrap();

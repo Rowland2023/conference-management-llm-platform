@@ -1,50 +1,37 @@
-// src/authentication/bootstrap/module.js
+// src/conference-management/authentication/boostrap/module.js
 
 import { AuthenticationController }
     from "../presentation/controllers/AuthenticationController.js";
-
-    import {
-    createAuthenticationModule,
-} from "../authentication/index.js";
 
 import { createAuthenticationRouter }
     from "../presentation/routes/authentication.routes.js";
 
 import { LoginUserUseCase }
-    from "../application/useCases/LoginUserUseCase.js";
+    from "../application/use-cases/LoginUseCase.js";
 
 import { RegisterUserUseCase }
-    from "../application/useCases/RegisterUserUseCase.js";
-
-import { LogoutUserUseCase }
-    from "../application/useCases/LogoutUserUseCase.js";
-
-import { RefreshAccessTokenUseCase }
-    from "../application/useCases/RefreshAccessTokenUseCase.js";
-
-import { ChangePasswordUseCase }
-    from "../application/useCases/ChangePasswordUseCase.js";
-
-import { GetCurrentUserUseCase }
-    from "../application/useCases/GetCurrentUserUseCase.js";
+    from "../application/use-cases/RegisterUserUseCase.js";
 
 import { PostgresUserRepository }
-    from "../infrastructure/persistence/PostgresUserRepository.js";
+    from "../infrastructure/persistence/repositories/PostgresUserRepository.js";
 
 import { PostgresRefreshTokenRepository }
-    from "../infrastructure/persistence/PostgresRefreshTokenRepository.js";
+    from "../infrastructure/persistence/repositories/PostgresRefreshTokenRepository.js";
 
 import { BcryptPasswordHasher }
     from "../infrastructure/crypto/BcryptPasswordHasher.js";
 
 import { JwtTokenIssuer }
-    from "../infrastructure/tokens/JwtTokenIssuer.js";
+    from "../infrastructure/jwt/JwtIssuer.js";
+
 
 export function createAuthenticationModule({
 
     db,
 
     config,
+
+    unitOfWorkFactory,
 
     logger,
 
@@ -59,19 +46,24 @@ export function createAuthenticationModule({
     const userRepository =
         new PostgresUserRepository({
 
-            db,
+            knex:
+                db,
 
         });
+
 
     const refreshTokenRepository =
         new PostgresRefreshTokenRepository({
 
-            db,
+            knex:
+                db,
 
         });
 
+
     const passwordHasher =
         new BcryptPasswordHasher();
+
 
     const tokenIssuer =
         new JwtTokenIssuer({
@@ -87,6 +79,7 @@ export function createAuthenticationModule({
 
         });
 
+
     /*
     |--------------------------------------------------------------------------
     | Use Cases
@@ -100,7 +93,10 @@ export function createAuthenticationModule({
 
             passwordHasher,
 
+            unitOfWorkFactory,
+
         });
+
 
     const loginUserUseCase =
         new LoginUserUseCase({
@@ -113,39 +109,10 @@ export function createAuthenticationModule({
 
             tokenIssuer,
 
-        });
-
-    const logoutUserUseCase =
-        new LogoutUserUseCase({
-
-            refreshTokenRepository,
+            unitOfWorkFactory,
 
         });
 
-    const refreshAccessTokenUseCase =
-        new RefreshAccessTokenUseCase({
-
-            refreshTokenRepository,
-
-            tokenIssuer,
-
-        });
-
-    const changePasswordUseCase =
-        new ChangePasswordUseCase({
-
-            userRepository,
-
-            passwordHasher,
-
-        });
-
-    const getCurrentUserUseCase =
-        new GetCurrentUserUseCase({
-
-            userRepository,
-
-        });
 
     /*
     |--------------------------------------------------------------------------
@@ -156,19 +123,14 @@ export function createAuthenticationModule({
     const controller =
         new AuthenticationController({
 
-            registerUserUseCase,
+            registerUser:
+                registerUserUseCase,
 
-            loginUserUseCase,
-
-            logoutUserUseCase,
-
-            refreshAccessTokenUseCase,
-
-            changePasswordUseCase,
-
-            getCurrentUserUseCase,
+            loginUser:
+                loginUserUseCase,
 
         });
+
 
     /*
     |--------------------------------------------------------------------------
@@ -182,9 +144,19 @@ export function createAuthenticationModule({
             controller,
 
             authenticate:
-                null, // replace with JwtAuthenticationMiddleware later
+                null,
 
         });
+
+
+    logger?.info(
+        {
+            module:
+                "authentication",
+        },
+        "Authentication module initialized"
+    );
+
 
     return {
 

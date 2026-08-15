@@ -23,9 +23,9 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>10/10</span>
+                <span class='fraction'>0/10</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>10/10</span>
+                <span class='fraction'>0/10</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line high'></div>
+    <div class='status-line low'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -182,21 +182,21 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -224,19 +224,19 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -269,21 +269,21 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -294,21 +294,21 @@ import Joi from "joi";
 /**
  * Shared validators
  */
-const ticketId = Joi.string()
+const ticketId = <span class="cstat-no" title="statement not covered" >Joi.string()</span>
     .uuid()
     .required();
 &nbsp;
-const seatNumber = Joi.string()
+const seatNumber = <span class="cstat-no" title="statement not covered" >Joi.string()</span>
     .trim()
     .max(50);
 &nbsp;
-const reservationId = Joi.string()
+const reservationId = <span class="cstat-no" title="statement not covered" >Joi.string()</span>
     .uuid();
 &nbsp;
 /**
  * Ticket fields
  */
-const ticketFields = {
+const ticketFields = <span class="cstat-no" title="statement not covered" >{</span>
     conferenceId: Joi.string()
         .uuid()
         .required(),
@@ -336,19 +336,19 @@ const ticketFields = {
 /**
  * Create Ticket
  */
-export const createTicketSchema = Joi.object(ticketFields);
+export const createTicketSchema = <span class="cstat-no" title="statement not covered" >Joi.object(ticketFields);</span>
 &nbsp;
 /**
  * Ticket identifier
  */
-export const ticketIdSchema = Joi.object({
+export const ticketIdSchema = <span class="cstat-no" title="statement not covered" >Joi.object({</span>
     id: ticketId,
 });
 &nbsp;
 /**
  * Ticket listing
  */
-export const ticketQuerySchema = Joi.object({
+export const ticketQuerySchema = <span class="cstat-no" title="statement not covered" >Joi.object({</span>
     page: Joi.number()
         .integer()
         .min(1)
@@ -381,21 +381,21 @@ export const ticketQuerySchema = Joi.object({
 /**
  * Reserve Ticket
  */
-export const reserveTicketSchema = Joi.object({
+export const reserveTicketSchema = <span class="cstat-no" title="statement not covered" >Joi.object({</span>
     reservationId: reservationId.required(),
 });
 &nbsp;
 /**
  * Release Ticket
  */
-export const releaseTicketSchema = Joi.object({
+export const releaseTicketSchema = <span class="cstat-no" title="statement not covered" >Joi.object({</span>
     reservationId,
 });
 &nbsp;
 /**
  * Cancel Ticket
  */
-export const cancelTicketSchema = Joi.object({
+export const cancelTicketSchema = <span class="cstat-no" title="statement not covered" >Joi.object({</span>
     reason: Joi.string()
         .max(500)
         .optional(),
@@ -406,7 +406,7 @@ export const cancelTicketSchema = Joi.object({
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-08-02T14:48:02.637Z
+                at 2026-08-14T22:48:18.627Z
             </div>
         <script src="../../../../../prettify.js"></script>
         <script>

@@ -2,7 +2,8 @@ module.exports = {
     testEnvironment: "node",
 
     roots: [
-        "<rootDir>/test"
+        "<rootDir>/test",
+        "<rootDir>/src"
     ],
 
     testMatch: [

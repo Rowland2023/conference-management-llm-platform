@@ -26,7 +26,7 @@ export class CreatePaymentUseCase {
 
         let payment = await this._loadOrCreate(input, context, txLogger);
         
-        if (payment.status === "CREATED") {
+        if (payment.status === "PENDING") {
             payment = await this._initializeGateway(payment, context, txLogger);
         } else {
             txLogger.info('Returning existing payment state', { 

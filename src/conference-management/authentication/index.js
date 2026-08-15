@@ -2,7 +2,7 @@
 
 export {
     createAuthenticationModule,
-} from "./bootstrap/module.js";
+} from "./boostrap/module.js";
 
 export {
     UserRepository,

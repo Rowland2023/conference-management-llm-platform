@@ -1,7 +1,7 @@
 // src/authentication/domain/events/UserRegistered.js
 
 import { DomainEvent }
-    from "../../../shared/domain/DomainEvent.js";
+    from "../../../../shared/domain/DomainEvent.js";
 
 export class UserRegistered
     extends DomainEvent {
@@ -37,3 +37,4 @@ export class UserRegistered
     }
 
 }
+

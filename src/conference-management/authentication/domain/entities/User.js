@@ -1,4 +1,4 @@
-// src/authentication/domain/entities/User.js
+// src/conference-management/authentication/domain/entities/User.js
 
 import { UserStatus } from "../valueObjects/UserStatus.js";
 import { Role } from "../valueObjects/Role.js";
@@ -45,7 +45,8 @@ export class User {
 
     changePassword(passwordHash) {
 
-        this.passwordHash = passwordHash;
+        this.passwordHash =
+            passwordHash;
 
         this.touch();
 
@@ -53,7 +54,8 @@ export class User {
 
     verifyEmail() {
 
-        this.emailVerified = true;
+        this.emailVerified =
+            true;
 
         this.touch();
 
@@ -61,7 +63,8 @@ export class User {
 
     activate() {
 
-        this.status = UserStatus.ACTIVE;
+        this.status =
+            UserStatus.ACTIVE;
 
         this.touch();
 
@@ -69,7 +72,8 @@ export class User {
 
     suspend() {
 
-        this.status = UserStatus.SUSPENDED;
+        this.status =
+            UserStatus.SUSPENDED;
 
         this.touch();
 
@@ -77,7 +81,8 @@ export class User {
 
     lock() {
 
-        this.status = UserStatus.LOCKED;
+        this.status =
+            UserStatus.LOCKED;
 
         this.touch();
 
@@ -88,15 +93,19 @@ export class User {
         if (
             !(role instanceof Role)
         ) {
+
             throw new Error(
                 "Role must be a Role Value Object."
             );
+
         }
 
         if (
             this.hasRole(role)
         ) {
+
             return;
+
         }
 
         this.roles.push(role);

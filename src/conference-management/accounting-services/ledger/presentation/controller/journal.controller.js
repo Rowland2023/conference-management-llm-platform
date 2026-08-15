@@ -7,7 +7,7 @@
  * Delegates all application operations to LedgerService.
  */
 
-import JournalSerializer from "../serializers/journal.serializer.js";
+
 
 export default class JournalController {
 
@@ -51,13 +51,7 @@ export default class JournalController {
         });
 
 
-      return res.status(201).json({
-
-        success: true,
-
-        data: JournalSerializer.serialize(entry),
-
-      });
+      return res.status(201).json(entry);
 
 
     } catch (err) {
@@ -104,13 +98,7 @@ export default class JournalController {
         });
 
 
-      return res.status(200).json({
-
-        success: true,
-
-        data: JournalSerializer.serialize(entry),
-
-      });
+      return res.status(200).json(entry);
 
 
     } catch(err) {
