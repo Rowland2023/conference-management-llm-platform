@@ -1,3 +1,4 @@
+
 // src/conference-management/accounting-services/payment/index.js
 
 import { randomUUID } from "crypto";
@@ -18,7 +19,6 @@ import { RefundPaymentUseCase } from "./application/use-cases/refund-payment.use
 import { HandlePaystackWebhookUseCase } from "./application/use-cases/handle-paystack-webhook.usecase.js";
 import { HandleStripeWebhookUseCase } from "./application/use-cases/handle-stripe-webhook.usecase.js";
 
-
 import { PaystackPaymentGateway } from "./infrastructure/gateways/PaystackPaymentGateway.js";
 import { StripePaymentGateway } from "./infrastructure/gateways/StripPaymentGateway.js";
 
@@ -32,9 +32,7 @@ import { PaystackWebhookVerifier } from "./infrastructure/webhook/PaystackWebhoo
 import { StripeWebhookVerifier } from "./infrastructure/webhook/StripeWebhookVerifier.js";
 
 
-
 export function createPaymentModule(shared) {
-
 
     const {
         db,
@@ -46,7 +44,6 @@ export function createPaymentModule(shared) {
     } = shared;
 
 
-
     // ======================================================
     // Infrastructure
     // ======================================================
@@ -56,10 +53,10 @@ export function createPaymentModule(shared) {
 
             db,
 
-            paymentMapper: new PaymentMapper(),
+            paymentMapper:
+                new PaymentMapper(),
 
         });
-
 
 
     const refundRepository =
@@ -68,7 +65,6 @@ export function createPaymentModule(shared) {
             db,
 
         });
-
 
 
     const lockManager =
@@ -83,10 +79,8 @@ export function createPaymentModule(shared) {
         });
 
 
-
     const unitOfWork =
         unitOfWorkFactory();
-
 
 
     const idGenerator = {
@@ -100,7 +94,6 @@ export function createPaymentModule(shared) {
     };
 
 
-
     const clock = {
 
         now() {
@@ -112,43 +105,44 @@ export function createPaymentModule(shared) {
     };
 
 
-
-
-
     // ======================================================
     // Payment Providers
     // ======================================================
 
     const paystackGateway =
-        config.paystack?.secretKey
+    config.paystack?.secretKey
 
-            ? new PaystackPaymentGateway({
+        ? new PaystackPaymentGateway(
 
-                config,
+            config.paystack.secretKey,
 
+            {
                 logger,
+            }
 
-            })
+        )
 
-            : null;
-
+        : null;
 
 
     const stripeGateway =
-        config.stripe?.secretKey
+    config.stripe?.secretKey
 
-            ? new StripePaymentGateway({
+        ? new StripePaymentGateway(
 
-                config,
+            config.stripe.secretKey,
 
+            {
                 logger,
 
-            })
+                apiVersion:
+                    config.stripe.apiVersion,
 
-            : null;
+            }
 
+        )
 
-
+        : null;
 
 
     // ======================================================
@@ -157,12 +151,9 @@ export function createPaymentModule(shared) {
 
     const paymentGatewayFactory = {
 
-
         getGateway(provider) {
 
-
-            switch(provider) {
-
+            switch (provider) {
 
                 case "stripe":
 
@@ -175,7 +166,6 @@ export function createPaymentModule(shared) {
                     }
 
                     return stripeGateway;
-
 
 
                 case "paystack":
@@ -191,7 +181,6 @@ export function createPaymentModule(shared) {
                     return paystackGateway;
 
 
-
                 default:
 
                     throw new Error(
@@ -205,9 +194,6 @@ export function createPaymentModule(shared) {
     };
 
 
-
-
-
     // ======================================================
     // Webhook Verifiers
     // ======================================================
@@ -215,31 +201,38 @@ export function createPaymentModule(shared) {
     const paystackWebhookVerifier =
         config.paystack?.webhookSecret
 
-            ? new PaystackWebhookVerifier({
+            ? new PaystackWebhookVerifier(
 
-                secret: config.paystack.webhookSecret,
+                config.paystack.webhookSecret,
 
-            })
+                {
+                    logger,
+                }
+
+            )
 
             : null;
-
-
 
 
     const stripeWebhookVerifier =
+        config.stripe?.secretKey &&
         config.stripe?.webhookSecret
 
-            ? new StripeWebhookVerifier({
+            ? new StripeWebhookVerifier(
 
-                secret: config.stripe.webhookSecret,
+                config.stripe.secretKey,
 
-            })
+                config.stripe.webhookSecret,
+
+                {
+                    logger,
+                    apiVersion:
+                        config.stripe.apiVersion,
+                }
+
+            )
 
             : null;
-
-
-
-
 
 
     // ======================================================
@@ -260,8 +253,6 @@ export function createPaymentModule(shared) {
             logger,
 
         });
-
-
 
 
     const refundPaymentUseCase =
@@ -288,8 +279,6 @@ export function createPaymentModule(shared) {
         });
 
 
-
-
     const getPaymentByIdUseCase =
         new GetPaymentByIdUseCase({
 
@@ -300,8 +289,6 @@ export function createPaymentModule(shared) {
         });
 
 
-
-
     const getAllPaymentsUseCase =
         new GetAllPaymentsUseCase({
 
@@ -310,10 +297,6 @@ export function createPaymentModule(shared) {
             logger,
 
         });
-
-
-
-
 
 
     // ======================================================
@@ -340,8 +323,6 @@ export function createPaymentModule(shared) {
         });
 
 
-
-
     const handleStripeWebhookUseCase =
         new HandleStripeWebhookUseCase({
 
@@ -362,11 +343,6 @@ export function createPaymentModule(shared) {
         });
 
 
-
-
-
-
-
     // ======================================================
     // Application Services
     // ======================================================
@@ -385,9 +361,6 @@ export function createPaymentModule(shared) {
         });
 
 
-
-
-
     const paymentWebhookService =
         new PaymentWebhookService({
 
@@ -396,11 +369,6 @@ export function createPaymentModule(shared) {
             handleStripeWebhookUseCase,
 
         });
-
-
-
-
-
 
 
     // ======================================================
@@ -415,19 +383,12 @@ export function createPaymentModule(shared) {
         });
 
 
-
-
     const paymentWebhookController =
         new PaymentWebhookController({
 
             paymentWebhookService,
 
         });
-
-
-
-
-
 
 
     // ======================================================
@@ -444,22 +405,13 @@ export function createPaymentModule(shared) {
         });
 
 
-
-
-
-
-
-
     // ======================================================
     // Public Module API
     // ======================================================
 
     return {
 
-
         router,
-
-
 
         controllers: {
 
@@ -469,8 +421,6 @@ export function createPaymentModule(shared) {
 
         },
 
-
-
         services: {
 
             paymentService,
@@ -479,8 +429,6 @@ export function createPaymentModule(shared) {
 
         },
 
-
-
         repositories: {
 
             paymentRepository,
@@ -488,8 +436,6 @@ export function createPaymentModule(shared) {
             refundRepository,
 
         },
-
-
 
         gateways: {
 
@@ -500,8 +446,6 @@ export function createPaymentModule(shared) {
             paymentGatewayFactory,
 
         },
-
-
 
         useCases: {
 
@@ -519,16 +463,17 @@ export function createPaymentModule(shared) {
 
         },
 
-
-
         infrastructure: {
 
             lockManager,
 
             unitOfWork,
 
-        },
+            paystackWebhookVerifier,
 
+            stripeWebhookVerifier,
+
+        },
 
     };
 

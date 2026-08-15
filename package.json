@@ -9,7 +9,7 @@
   "scripts": {
     "start": "nodemon --exec babel-node ./src/index.js",
     "test": "cross-env NODE_ENV=test jest --runInBand",
-    "test:unit": "jest test/unit",
+    "test:unit": "jest --config jest.unit.config.cjs --runInBand",
     "test:integration": "jest test/integration",
     "test:api": "jest test/api",
     "migrate": "knex migrate:latest",
@@ -24,6 +24,7 @@
     "@babel/preset-env": "^7.29.7",
     "@opentelemetry/api": "^1.9.1",
     "axios": "^1.19.0",
+    "bcrypt": "^6.0.0",
     "bignumber.js": "^11.1.5",
     "cors": "^2.8.6",
     "crypto": "^1.0.1",

@@ -1,11 +1,203 @@
 /**
+ * Payment persistence schema
+ *
+ * Domain source of truth:
+ * Payment.js
+ * PaymentStatus.js
+ *
  * @param { import("knex").Knex } knex
  * @returns { Promise<void> }
  */
 export async function up(knex) {
   await knex.raw('CREATE EXTENSION IF NOT EXISTS "pgcrypto";');
 
-  // 1. Reusable trigger function for updated_at
+  await knex.schema.createTable("payments", (table) => {
+    // ---------------------------------------------------------
+    // Identity
+    // ---------------------------------------------------------
+
+    table
+      .uuid("id")
+      .primary()
+      .defaultTo(knex.raw("gen_random_uuid()"));
+
+    // ---------------------------------------------------------
+    // Multi-tenancy / business context
+    // ---------------------------------------------------------
+
+    table.uuid("tenant_id").notNullable();
+
+    table.uuid("context_id").notNullable();
+
+    table.string("context_type", 50).notNullable();
+
+    // ---------------------------------------------------------
+    // Customer
+    // ---------------------------------------------------------
+
+    table.uuid("user_id").nullable();
+
+    table.string("email", 320).notNullable();
+
+    table.uuid("seller_id").nullable();
+
+    // ---------------------------------------------------------
+    // Money
+    //
+    // Amount is stored in minor units:
+    // NGN -> Kobo
+    // USD -> Cents
+    // ---------------------------------------------------------
+
+    table.bigInteger("amount").notNullable();
+
+    table.string("currency", 3).notNullable();
+
+    // ---------------------------------------------------------
+    // Payment lifecycle
+    // ---------------------------------------------------------
+
+    table
+      .string("status", 30)
+      .notNullable()
+      .defaultTo("PENDING");
+
+    table.string("gateway", 30).notNullable();
+
+    // ---------------------------------------------------------
+    // Gateway information
+    // ---------------------------------------------------------
+
+    table.string("external_reference", 255).nullable();
+
+    table.string("checkout_url", 2048).nullable();
+
+    table.string("gateway_transaction_id", 255).nullable();
+
+    table.jsonb("gateway_failure").nullable();
+
+    // ---------------------------------------------------------
+    // Lifecycle timestamps
+    // ---------------------------------------------------------
+
+    table.timestamp("paid_at", {
+      useTz: true,
+    }).nullable();
+
+    table.timestamp("released_at", {
+      useTz: true,
+    }).nullable();
+
+    table.timestamp("created_at", {
+      useTz: true,
+    }).notNullable().defaultTo(knex.fn.now());
+
+    table.timestamp("updated_at", {
+      useTz: true,
+    }).notNullable().defaultTo(knex.fn.now());
+
+    // ---------------------------------------------------------
+    // Aggregate version
+    //
+    // Used for optimistic concurrency / aggregate versioning.
+    // ---------------------------------------------------------
+
+    table
+      .integer("version")
+      .notNullable()
+      .defaultTo(0);
+  });
+
+  // ===========================================================
+  // Database constraints
+  // ===========================================================
+
+  await knex.raw(`
+    ALTER TABLE payments
+      ADD CONSTRAINT chk_payments_amount
+        CHECK (amount > 0),
+
+      ADD CONSTRAINT chk_payments_currency
+        CHECK (currency IN ('NGN', 'USD', 'GHS', 'KES')),
+
+      ADD CONSTRAINT chk_payments_status
+        CHECK (
+          status IN (
+            'PENDING',
+            'GATEWAY_INITIALIZED',
+            'SUCCESSFUL',
+            'HELD',
+            'RELEASED',
+            'FAILED',
+            'PARTIALLY_REFUNDED',
+            'REFUNDED',
+            'CANCELED'
+          )
+        );
+  `);
+
+  // ===========================================================
+  // Idempotency
+  // ===========================================================
+
+  /*
+   * Payment idempotency is currently handled by the application
+   * layer through the payment aggregate/request contract.
+   *
+   * If idempotency_key is part of the payment command/database
+   * contract, add it explicitly rather than silently reusing
+   * an old schema field.
+   */
+
+  // ===========================================================
+  // Gateway reconciliation indexes
+  // ===========================================================
+
+  await knex.raw(`
+    CREATE UNIQUE INDEX uq_payments_gateway_transaction_id
+      ON payments (gateway_transaction_id)
+      WHERE gateway_transaction_id IS NOT NULL;
+  `);
+
+  await knex.raw(`
+    CREATE UNIQUE INDEX uq_payments_external_reference
+      ON payments (external_reference)
+      WHERE external_reference IS NOT NULL;
+  `);
+
+  // ===========================================================
+  // Query indexes
+  // ===========================================================
+
+  await knex.raw(`
+    CREATE INDEX idx_payments_tenant_id
+      ON payments (tenant_id);
+  `);
+
+  await knex.raw(`
+    CREATE INDEX idx_payments_context
+      ON payments (context_type, context_id);
+  `);
+
+  await knex.raw(`
+    CREATE INDEX idx_payments_user_id
+      ON payments (user_id);
+  `);
+
+  await knex.raw(`
+    CREATE INDEX idx_payments_status
+      ON payments (status);
+  `);
+
+  await knex.raw(`
+    CREATE INDEX idx_payments_created_at
+      ON payments (created_at DESC);
+  `);
+
+  // ===========================================================
+  // Updated-at trigger
+  // ===========================================================
+
   await knex.raw(`
     CREATE OR REPLACE FUNCTION update_updated_at_column()
     RETURNS TRIGGER AS $$
@@ -16,74 +208,11 @@ export async function up(knex) {
     $$ LANGUAGE plpgsql;
   `);
 
-  // 2. Create Payments Table
-  await knex.schema.createTable('payments', (table) => {
-    table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
-    table.uuid('user_id').notNullable();
-    table.uuid('order_id').notNullable();
-
-    // Financial Tracking (Minor units - Kobo, Cents)
-    table.bigInteger('amount_kobo').notNullable();
-    table.string('currency', 3).notNullable();
-    table.string('gateway', 20).notNullable();
-
-    // Scoped Idempotency Key (uniqueness scoped below via composite index)
-    table.string('idempotency_key', 128).notNullable();
-
-    // State Machine
-    table.string('status', 20).notNullable().defaultTo('pending');
-    table.string('gateway_transaction_id', 255).nullable();
-    table.string('gateway_reference', 255).nullable();
-    table.jsonb('metadata').notNullable().defaultTo(knex.raw(`'{}'::jsonb`));
-    table.text('error_message').nullable();
-
-    // Audit Timestamps
-    table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
-    table.timestamp('updated_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
-    table.timestamp('completed_at', { useTz: true }).nullable();
-  });
-
-  // 3. DB-Level Constraints & Checks
   await knex.raw(`
-    ALTER TABLE payments
-      ADD CONSTRAINT chk_payments_amount CHECK (amount_kobo > 0),
-      ADD CONSTRAINT chk_payments_currency CHECK (currency IN ('NGN', 'USD', 'GHS', 'KES')),
-      ADD CONSTRAINT chk_payments_gateway CHECK (gateway IN ('paystack', 'flutterwave', 'stripe')),
-      ADD CONSTRAINT chk_payments_status CHECK (status IN ('pending', 'processing', 'completed', 'failed', 'cancelled'));
-  `);
-
-  // 4. Hardened Index Strategy
-  await knex.raw(`
-    -- Anti-Double-Payment Guard: Only 1 active (pending/processing) payment allowed per order
-    CREATE UNIQUE INDEX uq_payments_active_order
-    ON payments (order_id)
-    WHERE status IN ('pending', 'processing');
-
-    -- Scoped Idempotency: Prevent collision across different users
-    CREATE UNIQUE INDEX uq_payments_user_idempotency
-    ON payments (user_id, idempotency_key);
-
-    -- Webhook Reconciliation: Fast lookup when provider sends transaction ID or reference
-    CREATE UNIQUE INDEX uq_payments_gateway_transaction_id
-    ON payments (gateway_transaction_id)
-    WHERE gateway_transaction_id IS NOT NULL;
-
-    CREATE UNIQUE INDEX uq_payments_gateway_reference
-    ON payments (gateway_reference)
-    WHERE gateway_reference IS NOT NULL;
-
-    -- Dashboard & User Query Paths
-    CREATE INDEX idx_payments_user_status ON payments(user_id, status);
-    CREATE INDEX idx_payments_order_id ON payments(order_id);
-    CREATE INDEX idx_payments_status_created ON payments(status, created_at DESC);
-  `);
-
-  // 5. Attach Updated Timestamp Trigger
-  await knex.raw(`
-    DROP TRIGGER IF EXISTS update_payments_updated_at ON payments;
     CREATE TRIGGER update_payments_updated_at
     BEFORE UPDATE ON payments
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
   `);
 }
 
@@ -92,6 +221,10 @@ export async function up(knex) {
  * @returns { Promise<void> }
  */
 export async function down(knex) {
-  await knex.raw('DROP TRIGGER IF EXISTS update_payments_updated_at ON payments;');
-  await knex.schema.dropTableIfExists('payments');
+  await knex.raw(`
+    DROP TRIGGER IF EXISTS update_payments_updated_at
+    ON payments;
+  `);
+
+  await knex.schema.dropTableIfExists("payments");
 }

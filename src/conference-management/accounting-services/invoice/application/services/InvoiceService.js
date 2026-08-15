@@ -1,19 +1,12 @@
-// invoice/application/services/InvoiceService.js
-
 export class InvoiceService {
 
     constructor({
-
         createInvoiceUseCase,
-
         issueInvoiceUseCase,
-
         cancelInvoiceUseCase,
-
+        recordPaymentUseCase,
         getInvoiceUseCase,
-
         listInvoicesUseCase,
-
     }) {
 
         this.createInvoiceUseCase =
@@ -25,57 +18,37 @@ export class InvoiceService {
         this.cancelInvoiceUseCase =
             cancelInvoiceUseCase;
 
+        this.recordPaymentUseCase =
+            recordPaymentUseCase;
+
         this.getInvoiceUseCase =
             getInvoiceUseCase;
 
         this.listInvoicesUseCase =
             listInvoicesUseCase;
-
     }
-
 
     async create(command) {
-
-        return this.createInvoiceUseCase.execute(
-            command
-        );
-
+        return this.createInvoiceUseCase.execute(command);
     }
-
 
     async issue(command) {
-
-        return this.issueInvoiceUseCase.execute(
-            command
-        );
-
+        return this.issueInvoiceUseCase.execute(command);
     }
-
 
     async cancel(command) {
-
-        return this.cancelInvoiceUseCase.execute(
-            command
-        );
-
+        return this.cancelInvoiceUseCase.execute(command);
     }
 
+    async recordPayment(command) {
+        return this.recordPaymentUseCase.execute(command);
+    }
 
     async get(query) {
-
-        return this.getInvoiceUseCase.execute(
-            query
-        );
-
+        return this.getInvoiceUseCase.execute(query);
     }
-
 
     async list(query) {
-
-        return this.listInvoicesUseCase.execute(
-            query
-        );
-
+        return this.listInvoicesUseCase.execute(query);
     }
-
 }

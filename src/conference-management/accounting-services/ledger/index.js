@@ -7,20 +7,20 @@ import { LedgerService }
     from "./application/services/LedgerService.js";
 
 import { CreateAccountUseCase }
-    from "./application/use_cases/CreateAccountUseCase.js";
+    from "./application/use-case/create-account.usecase.js";
 
 import { CreateHoldUseCase }
-    from "./application/use_cases/CreateHoldUseCase.js";
+    from "./application/use-case/create-hold.usecase.js";
 
 import { GetLedgerBalanceUseCase }
-    from "./application/use_cases/GetLedgerBalanceUseCase.js";
+    from "./application/use-case/get-ledger-balance.usecase.js";
 
 import { PostJournalEntryUseCase }
-    from "./application/use_cases/PostJournalEntryUseCase.js";
+    from "./application/use-case/post-journal-entry.usecase.js";
 
 import { ReverseJournalEntryUseCase }
-    from "./application/use_cases/ReverseJournalEntryUseCase.js";
-
+    from "./application/use-case/reverse-journal-entry.usecase.js";
+    
 import { PostgresAccountRepository }
     from "./infrastructure/repositories/postgres-account.repository.js";
 

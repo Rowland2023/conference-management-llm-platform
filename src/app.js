@@ -3,10 +3,10 @@
 
 import express from "express";
 
-import { bootstrapInfrastructure } from "./bootstrap/infrastructure.js";
-import { bootstrapModules } from "./bootstrap/modules.js";
-import { bootstrapRoutes } from "./bootstrap/routes.js";
-import { bootstrapLifecycle } from "./bootstrap/lifecycle.js";
+import { boostrapInfrastructure } from "./boostrap/infrastructure.js";
+import { boostrapModules } from "./boostrap/modules.js";
+import { boostrapRoutes } from "./boostrap/routes.js";
+import { boostrapLifecycle } from "./boostrap/lifecycle.js";
 
 import db from "./cross-cutting/database/knex.js";
 import { config } from "./config/index.js";
@@ -49,10 +49,10 @@ app.get(
     }
 );
     //
-    // 1. Bootstrap Infrastructure
+    // 1. Boostrap Infrastructure
     //
     const infrastructure =
-        bootstrapInfrastructure({
+        boostrapInfrastructure({
             db,
             config,
             logger,
@@ -68,25 +68,25 @@ app.get(
     };
 
     //
-    // 4. Bootstrap Feature Modules
+    // 4. Boostrap Feature Modules
     //
     const modules =
-        await bootstrapModules(shared);
+        await boostrapModules(shared);
 
     //
     // 5. Register Routes
     //
-    bootstrapRoutes({
+    boostrapRoutes({
         app,
         modules,
         logger: shared.logger,
     });
 
     //
-    // 6. Bootstrap Lifecycle
+    // 6. Boostrap Lifecycle
     //
     const lifecycle =
-        bootstrapLifecycle({
+        boostrapLifecycle({
             modules,
             infrastructure: shared,
             logger: shared.logger,
